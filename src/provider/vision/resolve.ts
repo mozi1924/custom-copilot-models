@@ -1,8 +1,13 @@
 import vscode from 'vscode';
-import { IMAGE_DESCRIPTION_UNAVAILABLE } from '../../consts';
+import {
+	IMAGE_DESCRIPTION_PREFIX,
+	IMAGE_DESCRIPTION_SUFFIX,
+	IMAGE_DESCRIPTION_UNAVAILABLE,
+} from '../../consts';
 import { t } from '../../i18n';
 import { logger } from '../../logger';
 import {
+	computeDataHash,
 	createVisionDescriptionCacheKey,
 	createVisionDescriptionCacheStats,
 	finalizeVisionDescriptionCacheStats,
@@ -95,7 +100,10 @@ async function resolveImageDescription(
 	stats: VisionDescriptionCacheStats,
 	token: vscode.CancellationToken,
 ): Promise<string> {
-	const cacheKey = createVisionDescriptionCacheKey(part, visionModel.id, visionPrompt);
+	// Compute dataHash once; reused for cache key construction and
+	// the secondary index to avoid double SHA-256 on the same bytes.
+	const dataHash = computeDataHash(part.data);
+	const cacheKey = createVisionDescriptionCacheKey(part, visionModel.id, visionPrompt, dataHash);
 	const cachedDescription = getCachedDescription(cacheKey);
 	if (cachedDescription !== undefined) {
 		stats.hits += 1;
@@ -120,6 +128,7 @@ async function resolveImageDescription(
 		part,
 		visionModel,
 		visionPrompt,
+		dataHash,
 	);
 	rememberPendingDescription(cacheKey, pendingDescriptionRequest);
 	const description = await resolvePendingDescription(
@@ -139,11 +148,12 @@ function createPendingDescriptionRequest(
 	part: vscode.LanguageModelDataPart,
 	visionModel: vscode.LanguageModelChat,
 	visionPrompt: string,
+	dataHash: string,
 ): Promise<string> {
 	return describeImagePart(part, visionModel, visionPrompt).then(
 		(description) => {
 			if (description.length > 0) {
-				rememberDescription(cacheKey, description);
+				rememberDescription(cacheKey, description, dataHash);
 			}
 			return description;
 		},
@@ -241,7 +251,7 @@ async function describeImagePart(
 }
 
 function createImageDescriptionText(description: string): string {
-	return `[Image Description: ${description}]`;
+	return IMAGE_DESCRIPTION_PREFIX + description + IMAGE_DESCRIPTION_SUFFIX;
 }
 
 function isImageDataPart(part: unknown): part is vscode.LanguageModelDataPart {
