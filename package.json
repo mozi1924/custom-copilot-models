@@ -1,9 +1,9 @@
 {
-  "name": "deepseek-v4-for-copilot",
-  "displayName": "DeepSeek V4 for Copilot Chat",
-  "description": "Pick DeepSeek V4 Pro & Flash from the Copilot Chat model picker. Vision, thinking mode, agent tools — zero config, BYOK.",
+  "name": "responses-copilot",
+  "displayName": "Responses Copilot",
+  "description": "Use OpenAI-compatible Responses API models directly in the Copilot Chat model picker with native image input and tool calling.",
   "icon": "resources/icon.png",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "publisher": "Vizards",
   "license": "MIT",
   "repository": {
@@ -20,9 +20,8 @@
     "Programming Languages"
   ],
   "keywords": [
-    "deepseek",
-    "deepseek v4",
-    "deepseek-v4",
+    "responses",
+    "openai",
     "copilot",
     "github copilot",
     "copilot chat",
@@ -42,69 +41,69 @@
   "contributes": {
     "languageModelChatProviders": [
       {
-        "vendor": "deepseek",
-        "displayName": "DeepSeek"
+        "vendor": "responses-copilot",
+        "displayName": "Responses Copilot"
       }
     ],
     "commands": [
       {
-        "command": "deepseek-copilot.setApiKey",
-        "title": "%deepseek-copilot.command.setApiKey%"
+        "command": "responses-copilot.setApiKey",
+        "title": "%responses-copilot.command.setApiKey%"
       },
       {
-        "command": "deepseek-copilot.getApiKey",
-        "title": "%deepseek-copilot.command.getApiKey%"
+        "command": "responses-copilot.getApiKey",
+        "title": "%responses-copilot.command.getApiKey%"
       },
       {
-        "command": "deepseek-copilot.clearApiKey",
-        "title": "%deepseek-copilot.command.clearApiKey%"
+        "command": "responses-copilot.clearApiKey",
+        "title": "%responses-copilot.command.clearApiKey%"
       },
       {
-        "command": "deepseek-copilot.setVisionModel",
-        "title": "%deepseek-copilot.command.setVisionModel%"
+        "command": "responses-copilot.refreshModels",
+        "title": "%responses-copilot.command.refreshModels%"
       },
       {
-        "command": "deepseek-copilot.openSettings",
-        "title": "%deepseek-copilot.command.openSettings%"
+        "command": "responses-copilot.openSettings",
+        "title": "%responses-copilot.command.openSettings%"
       },
       {
-        "command": "deepseek-copilot.showLogs",
-        "title": "%deepseek-copilot.command.showLogs%"
+        "command": "responses-copilot.showLogs",
+        "title": "%responses-copilot.command.showLogs%"
       },
       {
-        "command": "deepseek-copilot.openRequestDumpsFolder",
-        "title": "%deepseek-copilot.command.openRequestDumpsFolder%"
+        "command": "responses-copilot.openRequestDumpsFolder",
+        "title": "%responses-copilot.command.openRequestDumpsFolder%"
       }
     ],
     "walkthroughs": [
       {
-        "id": "deepseekGettingStarted",
-        "title": "%deepseek-copilot.walkthrough.title%",
-        "description": "%deepseek-copilot.walkthrough.description%",
+        "id": "responsesGettingStarted",
+        "title": "%responses-copilot.walkthrough.title%",
+        "description": "%responses-copilot.walkthrough.description%",
         "steps": [
           {
             "id": "setApiKey",
-            "title": "%deepseek-copilot.walkthrough.setApiKey.title%",
-            "description": "%deepseek-copilot.walkthrough.setApiKey.description%",
+            "title": "%responses-copilot.walkthrough.setApiKey.title%",
+            "description": "%responses-copilot.walkthrough.setApiKey.description%",
             "media": {
               "markdown": "resources/walkthrough/set-api-key.md"
             },
             "completionEvents": [
-              "onCommand:deepseek-copilot.setApiKey"
+              "onCommand:responses-copilot.setApiKey"
             ]
           },
           {
             "id": "showModels",
-            "title": "%deepseek-copilot.walkthrough.showModels.title%",
-            "description": "%deepseek-copilot.walkthrough.showModels.description%",
+            "title": "%responses-copilot.walkthrough.showModels.title%",
+            "description": "%responses-copilot.walkthrough.showModels.description%",
             "media": {
               "markdown": "resources/walkthrough/show-models.md"
             }
           },
           {
             "id": "advancedSettings",
-            "title": "%deepseek-copilot.walkthrough.advancedSettings.title%",
-            "description": "%deepseek-copilot.walkthrough.advancedSettings.description%",
+            "title": "%responses-copilot.walkthrough.advancedSettings.title%",
+            "description": "%responses-copilot.walkthrough.advancedSettings.description%",
             "media": {
               "markdown": "resources/walkthrough/advanced-settings.md"
             }
@@ -113,58 +112,47 @@
       }
     ],
     "configuration": {
-      "title": "%deepseek-copilot.config.title%",
+      "title": "%responses-copilot.config.title%",
       "properties": {
-        "deepseek-copilot.baseUrl": {
+        "responses-copilot.baseUrl": {
           "type": "string",
-          "default": "https://api.deepseek.com",
-          "description": "%deepseek-copilot.config.baseUrl.description%"
+          "default": "https://api.openai.com/v1",
+          "description": "%responses-copilot.config.baseUrl.description%"
         },
-        "deepseek-copilot.maxTokens": {
+        "responses-copilot.maxOutputTokens": {
           "type": "number",
           "default": 0,
           "minimum": 0,
-          "description": "%deepseek-copilot.config.maxTokens.description%"
+          "description": "%responses-copilot.config.maxOutputTokens.description%"
         },
-        "deepseek-copilot.experimental.stabilizeToolList": {
+        "responses-copilot.modelListTtlMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "%responses-copilot.config.modelListTtlMinutes.description%"
+        },
+        "responses-copilot.reasoningEffortDefault": {
+          "type": "string",
+          "default": "medium",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "description": "%responses-copilot.config.reasoningEffortDefault.description%"
+        },
+        "responses-copilot.experimental.stabilizeToolList": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "%deepseek-copilot.config.experimental.stabilizeToolList.description%",
+          "markdownDescription": "%responses-copilot.config.experimental.stabilizeToolList.description%",
           "tags": [
             "experimental"
           ]
         },
-        "deepseek-copilot.modelIdOverrides": {
-          "type": "object",
-          "default": {
-            "deepseek-v4-flash": "deepseek-v4-flash",
-            "deepseek-v4-pro": "deepseek-v4-pro"
-          },
-          "description": "%deepseek-copilot.config.modelIdOverrides.description%",
-          "additionalProperties": false,
-          "properties": {
-            "deepseek-v4-flash": {
-              "type": "string",
-              "description": "%deepseek-copilot.config.modelIdOverrides.deepseek-v4-flash.description%"
-            },
-            "deepseek-v4-pro": {
-              "type": "string",
-              "description": "%deepseek-copilot.config.modelIdOverrides.deepseek-v4-pro.description%"
-            }
-          }
-        },
-        "deepseek-copilot.visionModel": {
-          "type": "string",
-          "default": "",
-          "description": "%deepseek-copilot.config.visionModel.description%"
-        },
-        "deepseek-copilot.visionPrompt": {
-          "type": "string",
-          "editPresentation": "multilineText",
-          "default": "Describe all image attachments in this message.\n\nIf there is one image, describe it directly.\nIf there are multiple images:\n1. Describe each image separately, preserving their order.\n2. Then provide a combined description explaining the overall context and relationships across the images.\n\nReturn one concise factual description suitable for inserting into a text-only chat prompt. Include visible text, objects, UI elements, people, and relevant context. Do not invent details.",
-          "description": "%deepseek-copilot.config.visionPrompt.description%"
-        },
-        "deepseek-copilot.debugMode": {
+        "responses-copilot.debugMode": {
           "type": "string",
           "default": "minimal",
           "enum": [
@@ -173,16 +161,16 @@
             "verbose"
           ],
           "enumItemLabels": [
-            "%deepseek-copilot.config.debugMode.minimal.label%",
-            "%deepseek-copilot.config.debugMode.metadata.label%",
-            "%deepseek-copilot.config.debugMode.verbose.label%"
+            "%responses-copilot.config.debugMode.minimal.label%",
+            "%responses-copilot.config.debugMode.metadata.label%",
+            "%responses-copilot.config.debugMode.verbose.label%"
           ],
           "markdownEnumDescriptions": [
-            "%deepseek-copilot.config.debugMode.minimal.description%",
-            "%deepseek-copilot.config.debugMode.metadata.description%",
-            "%deepseek-copilot.config.debugMode.verbose.description%"
+            "%responses-copilot.config.debugMode.minimal.description%",
+            "%responses-copilot.config.debugMode.metadata.description%",
+            "%responses-copilot.config.debugMode.verbose.description%"
           ],
-          "markdownDescription": "%deepseek-copilot.config.debugMode.description%"
+          "markdownDescription": "%responses-copilot.config.debugMode.description%"
         }
       }
     }

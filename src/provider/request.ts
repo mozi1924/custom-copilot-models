@@ -1,10 +1,10 @@
 import vscode from 'vscode';
 import { AuthManager } from '../auth';
-import { DeepSeekClient } from '../client';
-import { getApiModelId, getBaseUrl, getMaxTokens } from '../config';
-import { MODELS } from '../consts';
+import { ResponsesClient } from '../client';
+import { getBaseUrl, getMaxOutputTokens } from '../config';
+import { FALLBACK_MODELS } from '../consts';
 import { t } from '../i18n';
-import type { DeepSeekRequest } from '../types';
+import type { DeepSeekRequest, ResponsesRequest } from '../types';
 import { convertMessages, countMessageChars } from './convert';
 import {
 	classifyDeepSeekRequest,
@@ -17,11 +17,11 @@ import { getConfiguredThinkingEffort, type ModelConfigurationOptions } from './m
 import type { ReplayMarkerMetadata } from './replay';
 import type { ConversationSegment } from './segment';
 import { collectTrailingToolResultIds, prepareRequestTools } from './tools/request';
-import { resolveImageMessages } from './vision/index';
 
 export interface PreparedChatRequest {
-	client: DeepSeekClient;
-	request: DeepSeekRequest;
+	client: ResponsesClient;
+	request: ResponsesRequest;
+	debugRequest: DeepSeekRequest;
 	isThinkingModel: boolean;
 	totalRequestChars: number;
 	trailingToolResultIds: string[];
@@ -41,7 +41,6 @@ export interface PrepareChatRequestOptions {
 	options: vscode.ProvideLanguageModelChatResponseOptions;
 	token: vscode.CancellationToken;
 	cacheDiagnostics: CacheDiagnosticsRecorder;
-	getVisionModel: () => Promise<vscode.LanguageModelChat | undefined>;
 }
 
 export async function prepareChatRequest({
@@ -51,86 +50,90 @@ export async function prepareChatRequest({
 	segment,
 	messages,
 	options,
-	token,
 	cacheDiagnostics,
-	getVisionModel,
 }: PrepareChatRequestOptions): Promise<PreparedChatRequest> {
 	const apiKey = await authManager.getApiKey();
 	if (!apiKey) {
 		throw new Error(t('auth.notConfigured'));
 	}
 
-	const client = new DeepSeekClient(getBaseUrl(), apiKey);
-	const modelDef = MODELS.find((m) => m.id === modelInfo.id);
-	const isThinkingModel = modelDef?.capabilities.thinking ?? false;
+	const client = new ResponsesClient(getBaseUrl(), apiKey);
+	const modelDef = FALLBACK_MODELS.find((m) => m.id === modelInfo.id);
+	const isThinkingModel = modelDef?.capabilities.thinking ?? true;
 	const thinkingEffort = getConfiguredThinkingEffort(options as ModelConfigurationOptions);
-	const maxTokens = getMaxTokens();
+	const maxOutputTokens = getMaxOutputTokens();
+	const converted = convertMessages(messages, isThinkingModel);
+	const tools = prepareRequestTools(modelDef?.capabilities.toolCalling ?? true, options);
 
-	const visionResolution = await resolveImageMessages(messages, token, getVisionModel);
-	const resolvedMessages = visionResolution.messages;
-	const deepseekMessages = convertMessages(resolvedMessages, isThinkingModel);
-	const tools = prepareRequestTools(modelDef?.capabilities.toolCalling, options);
-
-	const totalRequestChars = countMessageChars(deepseekMessages);
-	const request: DeepSeekRequest = {
-		model: getApiModelId(modelInfo.id),
-		messages: deepseekMessages,
+	const request: ResponsesRequest = {
+		model: modelInfo.id,
+		input: converted.input,
 		stream: true,
 		tools,
-		tool_choice: tools && tools.length > 0 ? ('auto' as const) : undefined,
-		max_tokens: maxTokens,
-		...(isThinkingModel
-			? {
-					thinking: {
-						type: thinkingEffort === 'none' ? ('disabled' as const) : ('enabled' as const),
-					},
-					...(thinkingEffort === 'none' ? {} : { reasoning_effort: thinkingEffort }),
-				}
-			: {}),
+		tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
+		max_output_tokens: maxOutputTokens,
+		...(isThinkingModel ? { reasoning: { effort: thinkingEffort } } : {}),
 	};
+
+	const totalRequestChars = countMessageChars(converted.debugMessages);
+	const debugRequest: DeepSeekRequest = {
+		model: request.model,
+		messages: converted.debugMessages,
+		stream: true,
+		tools: tools?.map((tool) => ({
+			type: 'function',
+			function: {
+				name: tool.name,
+				description: tool.description,
+				parameters: tool.parameters,
+			},
+		})),
+		tool_choice: request.tool_choice,
+		max_tokens: request.max_output_tokens,
+		reasoning_effort: request.reasoning?.effort,
+	};
+
 	const requestKind = classifyDeepSeekRequest({
-		request,
+		request: debugRequest,
 		inputMessages: messages,
 	});
-	dumpDeepSeekRequest(request, {
+
+	dumpDeepSeekRequest(debugRequest, {
 		globalStorageUri,
 		segment,
 		requestKind,
 		vscodeModelId: modelInfo.id,
 		isThinkingModel,
 		thinkingEffort,
-		maxTokens,
+		maxTokens: maxOutputTokens,
 		inputMessages: messages,
-		resolvedMessages,
+		resolvedMessages: messages,
 		requestOptions: options,
-		visionModelId: visionResolution.visionModelId,
-		visionStats: visionResolution.stats,
 	});
 
 	const diagnosticsRun = cacheDiagnostics.beginRequest({
-		request,
+		request: debugRequest,
 		segment,
 		requestKind,
 		vscodeModelId: modelInfo.id,
 		isThinkingModel,
 		thinkingEffort,
-		maxTokens,
+		maxTokens: maxOutputTokens,
 		inputMessages: messages,
-		resolvedMessages,
-		visionModelId: visionResolution.visionModelId,
-		visionStats: visionResolution.stats,
+		resolvedMessages: messages,
 	});
 
 	return {
 		client,
 		request,
+		debugRequest,
 		isThinkingModel,
 		totalRequestChars,
-		trailingToolResultIds: collectTrailingToolResultIds(deepseekMessages),
+		trailingToolResultIds: collectTrailingToolResultIds(converted.debugMessages),
 		cacheDiagnostics: diagnosticsRun,
 		requestKind,
 		segment,
-		replayMarkerMetadata: visionResolution.replayMarkerMetadata,
-		visionMarkerTextChars: visionResolution.stats.markerVisionTextChars || undefined,
+		replayMarkerMetadata: {},
 	};
 }
+

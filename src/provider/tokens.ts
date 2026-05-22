@@ -36,9 +36,8 @@ function estimatePartChars(part: unknown): number {
 		return chars;
 	}
 
-	// 4. LanguageModelDataPart — use a capped heuristic because our model never
-	//    receives binary data directly. Images are resolved to text descriptions
-	//    by the vision pipeline; raw byteLength would massively overestimate.
+	// 4. LanguageModelDataPart — use a capped heuristic because byte size alone
+	//    overestimates image/token usage and exact model tokenization is server-side.
 	if (part instanceof vscode.LanguageModelDataPart) {
 		const mime = part.mimeType;
 		if (mime === REPLAY_MARKER_MIME) {
@@ -48,10 +47,8 @@ function estimatePartChars(part: unknown): number {
 			return 0;
 		}
 
-		// Images are resolved by the vision pipeline before reaching DeepSeek.
-		// At token-count time we cannot know whether this image will be generated,
-		// replayed from a later assistant marker, or omitted as a historical miss.
-		// Use a stable fallback estimate instead of raw image bytes.
+		// Images are forwarded as native input_image parts in Responses.
+		// At token-count time we use a stable estimate instead of raw image bytes.
 		if (mime.startsWith('image/')) {
 			return IMAGE_PART_ESTIMATED_CHARS;
 		}

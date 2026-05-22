@@ -2,38 +2,38 @@ import vscode from 'vscode';
 import { CONFIG_SECTION } from './consts';
 
 export type DebugMode = 'minimal' | 'metadata' | 'verbose';
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /**
- * Get DeepSeek API base URL from settings.
- * Falls back to the official endpoint when not configured.
+ * Get Responses API base URL from settings.
+ * Falls back to official OpenAI v1 endpoint when not configured.
  */
 export function getBaseUrl(): string {
 	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-	return config.get<string>('baseUrl') || 'https://api.deepseek.com';
-}
-
-/**
- * Resolve the API model ID to send to the endpoint.
- *
- * Users can override model IDs via the `modelIdOverrides` setting object
- * (e.g. for third-party API proxies). Falls back to the VS Code model ID
- * when no override is configured.
- */
-export function getApiModelId(vscodeModelId: string): string {
-	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-	const overrides = config.get<Record<string, string>>('modelIdOverrides');
-	const override = overrides?.[vscodeModelId]?.trim();
-	return override || vscodeModelId;
+	const baseUrl = config.get<string>('baseUrl') || 'https://api.openai.com/v1';
+	return stripTrailingSlash(baseUrl.trim() || 'https://api.openai.com/v1');
 }
 
 /**
  * Get the configured max output tokens limit.
  * Returns `undefined` when set to 0 (API default — no limit).
  */
-export function getMaxTokens(): number | undefined {
+export function getMaxOutputTokens(): number | undefined {
 	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-	const value = config.get<number>('maxTokens', 0);
+	const value = config.get<number>('maxOutputTokens', 0);
 	return value > 0 ? value : undefined;
+}
+
+export function getModelListTtlMinutes(): number {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	const value = config.get<number>('modelListTtlMinutes', 30);
+	return Number.isFinite(value) && value > 0 ? value : 30;
+}
+
+export function getReasoningEffortDefault(): ReasoningEffort {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	const value = config.get<string>('reasoningEffortDefault', 'medium');
+	return normalizeReasoningEffort(value) ?? 'medium';
 }
 
 /**
@@ -70,7 +70,7 @@ export function getStabilizeToolListEnabled(): boolean {
 }
 
 /**
- * Migrate the legacy boolean `deepseek-copilot.debug` setting to `debugMode`.
+ * Migrate the legacy boolean `responses-copilot.debug` setting to `debugMode`.
  *
  * `debug: true` maps to `debugMode: metadata`; `debug: false` maps to the
  * default `minimal`, so it only needs cleanup.
@@ -80,6 +80,24 @@ export async function migrateLegacyDebugSetting(): Promise<void> {
 	if (vscode.workspace.workspaceFile || vscode.workspace.workspaceFolders?.length) {
 		await migrateLegacyDebugSettingAtScope(vscode.ConfigurationTarget.Workspace);
 	}
+}
+
+function normalizeReasoningEffort(value: unknown): ReasoningEffort | undefined {
+	if (
+		value === 'none' ||
+		value === 'minimal' ||
+		value === 'low' ||
+		value === 'medium' ||
+		value === 'high' ||
+		value === 'xhigh'
+	) {
+		return value;
+	}
+	return undefined;
+}
+
+function stripTrailingSlash(url: string): string {
+	return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
 function getConfiguredDebugMode(config: vscode.WorkspaceConfiguration): DebugMode | undefined {

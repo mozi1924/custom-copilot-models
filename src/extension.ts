@@ -3,10 +3,10 @@ import { getDebugMode, migrateLegacyDebugSetting } from './config';
 import { CONFIG_SECTION, WALKTHROUGH_ID, WELCOME_SHOWN_KEY } from './consts';
 import { t } from './i18n';
 import { logger } from './logger';
-import { DeepSeekChatProvider } from './provider';
+import { ResponsesChatProvider } from './provider';
 import { ensureRequestDumpRoot } from './provider/debug';
 
-let activeProvider: DeepSeekChatProvider | undefined;
+let activeProvider: ResponsesChatProvider | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
 	try {
@@ -26,7 +26,6 @@ export async function activate(context: vscode.ExtensionContext) {
 			` debugMode=${getDebugMode()}`,
 	);
 
-	// Log debugMode changes so users can trace when verbosity was toggled
 	let currentDebugMode = getDebugMode();
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration((e) => {
@@ -39,46 +38,37 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('deepseek-copilot.showLogs', () => logger.show()),
-		vscode.commands.registerCommand('deepseek-copilot.openRequestDumpsFolder', () =>
+		vscode.commands.registerCommand('responses-copilot.showLogs', () => logger.show()),
+		vscode.commands.registerCommand('responses-copilot.openRequestDumpsFolder', () =>
 			openRequestDumpsFolder(context),
 		),
-		vscode.commands.registerCommand('deepseek-copilot.getApiKey', () =>
-			vscode.env.openExternal(vscode.Uri.parse('https://platform.deepseek.com/api_keys')),
+		vscode.commands.registerCommand('responses-copilot.getApiKey', () =>
+			vscode.env.openExternal(
+				vscode.Uri.parse('https://platform.openai.com/settings/organization/api-keys'),
+			),
 		),
-		vscode.commands.registerCommand('deepseek-copilot.openSettings', () =>
-			vscode.commands.executeCommand('workbench.action.openSettings', 'deepseek-copilot'),
+		vscode.commands.registerCommand('responses-copilot.openSettings', () =>
+			vscode.commands.executeCommand('workbench.action.openSettings', 'responses-copilot'),
 		),
 	);
 
 	try {
-		const provider = new DeepSeekChatProvider(context);
+		const provider = new ResponsesChatProvider(context);
 		activeProvider = provider;
 
 		context.subscriptions.push(
-			vscode.commands.registerCommand('deepseek-copilot.setApiKey', () =>
+			vscode.commands.registerCommand('responses-copilot.setApiKey', () =>
 				provider.configureApiKey(),
 			),
-			vscode.commands.registerCommand('deepseek-copilot.clearApiKey', () => provider.clearApiKey()),
-			vscode.commands.registerCommand('deepseek-copilot.setVisionModel', () =>
-				provider.setVisionProxyModel(),
+			vscode.commands.registerCommand('responses-copilot.clearApiKey', () =>
+				provider.clearApiKey(),
 			),
-			vscode.lm.registerLanguageModelChatProvider('deepseek', provider),
+			vscode.commands.registerCommand('responses-copilot.refreshModels', () =>
+				provider.refreshRemoteModels(),
+			),
+			vscode.lm.registerLanguageModelChatProvider('responses-copilot', provider),
 		);
 
-		// Fix(#12): Copilot Chat caches model info in chatLanguageModels.json
-		// but silently drops configurationSchema (Thinking Effort dropdown).
-		// Re-firing onDidChangeLanguageModelChatInformation forces Copilot Chat
-		// to re-query our provider through the full (non-cached) path.
-		//
-		// To avoid a race where our refresh event fires before Copilot Chat is
-		// listening, we programmatically activate Copilot Chat first. We do NOT
-		// use extensionDependencies because built-in extensions aren't enumerable
-		// in Remote-SSH hosts (#37), which causes the hard dependency to fail.
-		//
-		// If Copilot Chat is unavailable (e.g. Remote-SSH without built-in
-		// registration), we log a warning and proceed — Copilot Chat as a
-		// built-in typically initialises before onStartupFinished anyway.
 		try {
 			await vscode.extensions.getExtension('github.copilot-chat')?.activate();
 		} catch {
@@ -94,7 +84,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		logger.info(`Extension activated version=${context.extension.packageJSON.version}`);
 	} catch (error) {
 		activeProvider = undefined;
-		logger.error('Failed to activate DeepSeek extension', error);
+		logger.error('Failed to activate extension', error);
 		void vscode.window.showErrorMessage(t('extension.activateFailed'));
 		throw error;
 	}
@@ -113,7 +103,7 @@ async function openRequestDumpsFolder(context: vscode.ExtensionContext): Promise
 
 async function showWelcomeIfNeeded(
 	context: vscode.ExtensionContext,
-	provider: DeepSeekChatProvider,
+	provider: ResponsesChatProvider,
 ): Promise<void> {
 	if (context.globalState.get<boolean>(WELCOME_SHOWN_KEY)) {
 		return;
@@ -138,3 +128,4 @@ export async function deactivate() {
 		logger.dispose();
 	}
 }
+

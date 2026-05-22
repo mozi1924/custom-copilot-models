@@ -1,4 +1,3 @@
-import { DEEPSEEK_TOOLS_LIMIT } from './provider/tools/consts';
 import type { ModelDefinition } from './types';
 
 /**
@@ -9,56 +8,41 @@ import type { ModelDefinition } from './types';
  */
 
 /** VS Code configuration section prefix for all extension settings. */
-export const CONFIG_SECTION = 'deepseek-copilot';
+export const CONFIG_SECTION = 'responses-copilot';
 
 // VS Code's internal LanguageModelChatMessageRole.System is not exposed in @types/vscode.
 export const LANGUAGE_MODEL_CHAT_SYSTEM_ROLE = 3;
 
 // ---- Secret keys ----
 
-/** SecretStorage key for the DeepSeek API key. */
-export const API_KEY_SECRET = 'deepseek-copilot.apiKey';
+/** SecretStorage key for the provider API key. */
+export const API_KEY_SECRET = 'responses-copilot.apiKey';
 
 /** memento key tracking whether the welcome walkthrough has been shown. */
-export const WELCOME_SHOWN_KEY = 'deepseek-copilot.welcomeShown';
+export const WELCOME_SHOWN_KEY = 'responses-copilot.welcomeShown';
 
 // ---- Walkthrough ----
 
 /** Walkthrough contribution ID. */
-export const WALKTHROUGH_ID = 'Vizards.deepseek-v4-for-copilot#deepseekGettingStarted';
+export const WALKTHROUGH_ID = 'Vizards.responses-copilot#responsesGettingStarted';
 
 // ---- Model registry ----
 
-/** Available DeepSeek models exposed through the language model provider. */
-export const MODELS: ModelDefinition[] = [
+/** Fallback model shown before remote model discovery succeeds. */
+export const FALLBACK_MODELS: ModelDefinition[] = [
 	{
-		id: 'deepseek-v4-flash',
-		name: 'DeepSeek V4 Flash',
-		family: 'deepseek',
-		version: 'v4',
-		detail: 'Fast, general-purpose model',
-		maxInputTokens: 655360,
-		maxOutputTokens: 393216,
+		id: 'gpt-5.4-mini',
+		name: 'GPT-5.4 Mini',
+		family: 'gpt',
+		version: '5.4',
+		detail: 'General-purpose fallback model',
+		maxInputTokens: 1_000_000,
+		maxOutputTokens: 393_216,
 		capabilities: {
-			toolCalling: DEEPSEEK_TOOLS_LIMIT,
+			toolCalling: true,
 			imageInput: true,
 			thinking: true,
 		},
-		requiresThinkingParam: true,
-	},
-	{
-		id: 'deepseek-v4-pro',
-		name: 'DeepSeek V4 Pro',
-		family: 'deepseek',
-		version: 'v4',
-		detail: 'Most capable reasoning model',
-		maxInputTokens: 655360,
-		maxOutputTokens: 393216,
-		capabilities: {
-			toolCalling: DEEPSEEK_TOOLS_LIMIT,
-			imageInput: true,
-			thinking: true,
-		},
-		requiresThinkingParam: true,
+		requiresThinkingParam: false,
 	},
 ];

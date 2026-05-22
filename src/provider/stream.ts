@@ -48,51 +48,44 @@ export function streamChatCompletion({
 	};
 	const cancelListener = observeCancellationToken(token, prepared.cacheDiagnostics);
 
-	return prepared.client
-		.streamChatCompletion(
-			prepared.request,
-			{
-				onContent: (content: string) => {
-					reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
-					progress.report(new vscode.LanguageModelTextPart(content));
-				},
+	const callbacks = {
+		onContent: (content: string) => {
+			reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
+			progress.report(new vscode.LanguageModelTextPart(content));
+		},
 
-				onThinking: (text: string) => {
-					reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
-					handleThinking(text, state, progress);
-				},
+		onThinking: (text: string) => {
+			reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
+			handleThinking(text, state, progress);
+		},
 
-				onToolCall: (toolCall: DeepSeekToolCall) => {
-					reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
-					handleToolCall(toolCall, state, progress);
-				},
+		onToolCall: (toolCall: DeepSeekToolCall) => {
+			reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
+			handleToolCall(toolCall, state, progress);
+		},
 
-				onError: (error: Error) => {
-					throw error;
-				},
+		onError: (error: Error) => {
+			throw error;
+		},
 
-				onDone: () => {
-					reportReplayMarkerOnce(prepared, progress, state, 'done');
-					finalizeReplayDiagnostics(
-						prepared.trailingToolResultIds,
-						state,
-						prepared.cacheDiagnostics,
-					);
-				},
+		onDone: () => {
+			reportReplayMarkerOnce(prepared, progress, state, 'done');
+			finalizeReplayDiagnostics(prepared.trailingToolResultIds, state, prepared.cacheDiagnostics);
+		},
 
-				onUsage: (usage) => {
-					const charsPerToken = updateCharsPerToken(
-						prepared.totalRequestChars,
-						usage,
-						getCharsPerToken(),
-					);
-					setCharsPerToken(charsPerToken);
-					prepared.cacheDiagnostics.onUsage(usage, charsPerToken);
-					reportCopilotContextUsage(progress, usage);
-				},
-			},
-			token,
-		)
+		onUsage: (usage: DeepSeekUsage) => {
+			const charsPerToken = updateCharsPerToken(
+				prepared.totalRequestChars,
+				usage,
+				getCharsPerToken(),
+			);
+			setCharsPerToken(charsPerToken);
+			prepared.cacheDiagnostics.onUsage(usage, charsPerToken);
+			reportCopilotContextUsage(progress, usage);
+		},
+	};
+
+	return streamWithReasoningFallback(prepared, callbacks, token)
 		.then(undefined, (error) => {
 			reportSkippedReplayMarkerIfNeeded(
 				prepared,
@@ -110,6 +103,43 @@ export function streamChatCompletion({
 		.finally(() => {
 			cancelListener.dispose();
 		});
+}
+
+async function streamWithReasoningFallback(
+	prepared: PreparedChatRequest,
+	callbacks: {
+		onContent: (content: string) => void;
+		onThinking: (text: string) => void;
+		onToolCall: (toolCall: DeepSeekToolCall) => void;
+		onError: (error: Error) => never;
+		onDone: () => void;
+		onUsage: (usage: DeepSeekUsage) => void;
+	},
+	token: vscode.CancellationToken,
+): Promise<void> {
+	try {
+		await prepared.client.streamResponse(prepared.request, callbacks, token);
+	} catch (error) {
+		if (!shouldRetryWithoutReasoning(prepared.request, error)) {
+			throw error;
+		}
+		prepared.request.reasoning = undefined;
+		await prepared.client.streamResponse(prepared.request, callbacks, token);
+	}
+}
+
+function shouldRetryWithoutReasoning(
+	request: { reasoning?: { effort?: string } },
+	error: unknown,
+): boolean {
+	if (!request.reasoning?.effort || !(error instanceof Error)) {
+		return false;
+	}
+	const message = error.message.toLowerCase();
+	return (
+		message.includes('reasoning') &&
+		(message.includes('unsupported') || message.includes('invalid') || message.includes('not support'))
+	);
 }
 
 function reportInitialResponseNoticeOnce(

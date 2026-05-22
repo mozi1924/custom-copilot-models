@@ -2,28 +2,25 @@ import type { CancellationToken } from 'vscode';
 import { safeStringify } from './json';
 import { logger } from './logger';
 import type {
-	DeepSeekRequest,
-	DeepSeekStreamChunk,
 	DeepSeekToolCall,
+	DeepSeekUsage,
+	ResponsesRequest,
+	ResponsesStreamEvent,
 	StreamCallbacks,
 } from './types';
 
 /**
- * Lightweight SSE-streaming DeepSeek API client.
- * No external dependencies — uses Node's built-in fetch.
+ * Lightweight SSE-streaming Responses API client.
+ * No external dependencies - uses Node's built-in fetch.
  */
-export class DeepSeekClient {
+export class ResponsesClient {
 	constructor(
 		private readonly baseUrl: string,
 		private readonly apiKey: string,
 	) {}
 
-	/**
-	 * Stream a chat completion from the DeepSeek API.
-	 * Parses SSE chunks and dispatches callbacks for content, thinking, and tool calls.
-	 */
-	async streamChatCompletion(
-		request: DeepSeekRequest,
+	async streamResponse(
+		request: ResponsesRequest,
 		callbacks: StreamCallbacks,
 		cancellationToken?: CancellationToken,
 	): Promise<void> {
@@ -36,19 +33,13 @@ export class DeepSeekClient {
 		}
 
 		try {
-			// Request usage stats in streaming responses so we can calibrate token counting.
-			const requestBody = {
-				...request,
-				stream_options: { include_usage: true },
-			};
-
-			const response = await fetch(`${this.baseUrl}/chat/completions`, {
+			const response = await fetch(`${this.baseUrl}/responses`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: `Bearer ${this.apiKey}`,
 				},
-				body: safeStringify(requestBody),
+				body: safeStringify(request),
 				signal: controller.signal,
 			});
 
@@ -61,7 +52,7 @@ export class DeepSeekClient {
 				} catch {
 					errorMessage = errorText;
 				}
-				throw new Error(`DeepSeek API error (${response.status}): ${errorMessage}`);
+				throw new Error(`Responses API error (${response.status}): ${errorMessage}`);
 			}
 
 			if (!response.body) {
@@ -71,9 +62,7 @@ export class DeepSeekClient {
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-
-			// Accumulate tool call deltas by index, then emit on finish_reason=stop/tool_calls
-			const pendingToolCalls = new Map<number, DeepSeekToolCall>();
+			const pendingToolCalls = new Map<string, DeepSeekToolCall>();
 
 			while (true) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -87,88 +76,25 @@ export class DeepSeekClient {
 				}
 
 				buffer += decoder.decode(value, { stream: true });
-
 				const lines = buffer.split('\n');
 				buffer = lines.pop() || '';
 
 				for (const line of lines) {
 					const trimmed = line.trim();
-
-					if (!trimmed || trimmed.startsWith(':')) {
-						continue;
-					}
-
-					if (trimmed === 'data: [DONE]') {
-						// Flush any remaining tool calls
-						for (const tc of pendingToolCalls.values()) {
-							callbacks.onToolCall(tc);
-						}
-						pendingToolCalls.clear();
-						callbacks.onDone();
-						return;
-					}
-
-					if (!trimmed.startsWith('data: ')) {
+					if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data: ')) {
 						continue;
 					}
 
 					const jsonStr = trimmed.slice(6);
 					try {
-						const chunk: DeepSeekStreamChunk = JSON.parse(jsonStr);
-						const choice = chunk.choices?.[0];
-
-						// Capture usage stats from the API for token-count calibration.
-						if (chunk.usage && callbacks.onUsage) {
-							callbacks.onUsage(chunk.usage);
+						const event = JSON.parse(jsonStr) as ResponsesStreamEvent;
+						this.handleEvent(event, pendingToolCalls, callbacks);
+						if (event.type === 'response.completed') {
+							callbacks.onDone();
+							return;
 						}
-
-						if (!choice) {
-							continue;
-						}
-
-						// Thinking content → report with correct field name so VS Code renders collapsible blocks
-						const reasoning = choice.delta.reasoning_content;
-						if (reasoning) {
-							callbacks.onThinking(reasoning);
-						}
-
-						// Regular content
-						if (choice.delta.content) {
-							callbacks.onContent(choice.delta.content);
-						}
-
-						// Tool calls — accumulate deltas by index
-						if (choice.delta.tool_calls) {
-							for (const tc of choice.delta.tool_calls) {
-								let pending = pendingToolCalls.get(tc.index);
-								if (!pending && tc.id) {
-									pending = {
-										id: tc.id,
-										type: 'function',
-										function: { name: '', arguments: '' },
-									};
-									pendingToolCalls.set(tc.index, pending);
-								}
-								if (pending) {
-									if (tc.function?.name) {
-										pending.function.name += tc.function.name;
-									}
-									if (tc.function?.arguments) {
-										pending.function.arguments += tc.function.arguments;
-									}
-								}
-							}
-						}
-
-						// Flush pending tool calls on finish
-						if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
-							for (const tc of pendingToolCalls.values()) {
-								callbacks.onToolCall(tc);
-							}
-							pendingToolCalls.clear();
-						}
-					} catch (e) {
-						logger.error('Failed to parse SSE chunk:', jsonStr.slice(0, 200), e);
+					} catch (error) {
+						logger.error('Failed to parse Responses SSE chunk:', jsonStr.slice(0, 200), error);
 					}
 				}
 			}
@@ -183,8 +109,98 @@ export class DeepSeekClient {
 			cancelListener?.dispose();
 		}
 	}
+
+	private handleEvent(
+		event: ResponsesStreamEvent,
+		pendingToolCalls: Map<string, DeepSeekToolCall>,
+		callbacks: StreamCallbacks,
+	): void {
+		switch (event.type) {
+			case 'response.output_text.delta': {
+				if (event.delta) {
+					callbacks.onContent(event.delta);
+				}
+				break;
+			}
+			case 'response.output_item.added': {
+				const item = event.item;
+				if (!item || item.type !== 'function_call') {
+					break;
+				}
+				pendingToolCalls.set(item.id, {
+					id: item.call_id || item.id,
+					call_id: item.call_id,
+					type: 'function',
+					function: {
+						name: item.name ?? '',
+						arguments: item.arguments ?? '',
+					},
+				});
+				break;
+			}
+			case 'response.function_call_arguments.delta': {
+				if (!event.item_id || !event.delta) {
+					break;
+				}
+				const pending = pendingToolCalls.get(event.item_id);
+				if (pending) {
+					pending.function.arguments += event.delta;
+				}
+				break;
+			}
+			case 'response.function_call_arguments.done': {
+				const item = event.item;
+				if (!item || item.type !== 'function_call') {
+					break;
+				}
+				const pending = pendingToolCalls.get(item.id);
+				const toolCall = pending ?? {
+					id: item.call_id || item.id,
+					call_id: item.call_id,
+					type: 'function',
+					function: {
+						name: item.name,
+						arguments: item.arguments || '',
+					},
+				};
+				if (!toolCall.function.name) {
+					toolCall.function.name = item.name;
+				}
+				if (item.arguments) {
+					toolCall.function.arguments = item.arguments;
+				}
+				callbacks.onToolCall(toolCall);
+				pendingToolCalls.delete(item.id);
+				break;
+			}
+			case 'response.completed': {
+				const usage = event.response?.usage;
+				if (usage && callbacks.onUsage) {
+					callbacks.onUsage(mapResponsesUsage(usage));
+				}
+				break;
+			}
+			default:
+				break;
+		}
+	}
+}
+
+function mapResponsesUsage(usage: {
+	input_tokens: number;
+	output_tokens: number;
+	total_tokens: number;
+	input_tokens_details?: { cached_tokens?: number };
+}): DeepSeekUsage {
+	return {
+		prompt_tokens: usage.input_tokens,
+		completion_tokens: usage.output_tokens,
+		total_tokens: usage.total_tokens,
+		prompt_cache_hit_tokens: usage.input_tokens_details?.cached_tokens ?? 0,
+	};
 }
 
 function isAbortError(error: unknown): boolean {
 	return error instanceof Error && error.name === 'AbortError';
 }
+

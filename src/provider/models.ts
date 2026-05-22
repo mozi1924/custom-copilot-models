@@ -1,4 +1,5 @@
 import vscode from 'vscode';
+import { getReasoningEffortDefault } from '../config';
 import { t } from '../i18n';
 import type { ModelDefinition } from '../types';
 
@@ -12,7 +13,7 @@ import type { ModelDefinition } from '../types';
  * config dropdown in the model picker.
  */
 
-export type ThinkingEffort = 'none' | 'high' | 'max';
+export type ThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export type ModelConfigurationOptions = vscode.ProvideLanguageModelChatResponseOptions & {
 	readonly modelConfiguration?: Record<string, unknown>;
@@ -28,8 +29,7 @@ export type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
 };
 
 export function toChatInfo(m: ModelDefinition, hasApiKey: boolean): ModelPickerChatInformation {
-	const detailKey = resolveDetailKey(m);
-	const modelDetail = detailKey ? t(detailKey) : m.detail;
+	const modelDetail = m.detail;
 	return {
 		id: m.id,
 		name: m.name,
@@ -53,15 +53,12 @@ export function getConfiguredThinkingEffort(options: ModelConfigurationOptions):
 	const configuredEffort =
 		options.modelConfiguration?.reasoningEffort ?? options.configuration?.reasoningEffort;
 
-	if (configuredEffort === 'none') {
-		return 'none';
-	}
-
-	if (configuredEffort === 'high') {
-		return 'high';
-	}
-
-	return configuredEffort === 'max' ? 'max' : 'high';
+	if (configuredEffort === 'none') return 'none';
+	if (configuredEffort === 'minimal') return 'minimal';
+	if (configuredEffort === 'low') return 'low';
+	if (configuredEffort === 'high') return 'high';
+	if (configuredEffort === 'xhigh') return 'xhigh';
+	return getReasoningEffortDefault();
 }
 
 function buildThinkingEffortSchema() {
@@ -70,23 +67,26 @@ function buildThinkingEffortSchema() {
 			reasoningEffort: {
 				type: 'string',
 				title: t('status.thinking'),
-				enum: ['none', 'high', 'max'],
-				enumItemLabels: [t('thinking.none'), t('thinking.high'), t('thinking.max')],
+				enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+				enumItemLabels: [
+					t('thinking.none'),
+					t('thinking.minimal'),
+					t('thinking.low'),
+					t('thinking.medium'),
+					t('thinking.high'),
+					t('thinking.xhigh'),
+				],
 				enumDescriptions: [
 					t('thinking.none.desc'),
+					t('thinking.minimal.desc'),
+					t('thinking.low.desc'),
+					t('thinking.medium.desc'),
 					t('thinking.high.desc'),
-					t('thinking.max.desc'),
+					t('thinking.xhigh.desc'),
 				],
-				default: 'high',
+				default: getReasoningEffortDefault(),
 				group: 'navigation',
 			},
 		},
 	} as const;
-}
-
-function resolveDetailKey(m: ModelDefinition): string | undefined {
-	const suffix = m.id.startsWith('deepseek-v4-') ? m.id.slice('deepseek-v4-'.length) : m.id;
-	const key = `model.${suffix}.detail`;
-	const translated = t(key);
-	return translated !== key ? key : undefined;
 }

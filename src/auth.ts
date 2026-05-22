@@ -3,7 +3,7 @@ import { API_KEY_SECRET } from './consts';
 import { t } from './i18n';
 
 /**
- * Manages DeepSeek API key via VS Code SecretStorage (secure) with
+ * Manages provider API key via VS Code SecretStorage (secure) with
  * fallback to extension settings (less secure, for CI/automation).
  */
 export class AuthManager {
@@ -22,7 +22,7 @@ export class AuthManager {
 			return secretKey;
 		}
 
-		const config = vscode.workspace.getConfiguration('deepseek-copilot');
+		const config = vscode.workspace.getConfiguration('responses-copilot');
 		const settingsKey = config.get<string>('apiKey');
 		if (settingsKey?.trim()) {
 			return settingsKey.trim();

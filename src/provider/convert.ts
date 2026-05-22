@@ -1,29 +1,51 @@
 import vscode from 'vscode';
 import { safeStringify } from '../json';
-import type { DeepSeekMessage, DeepSeekTool, DeepSeekToolCall } from '../types';
+import type {
+	DeepSeekMessage,
+	DeepSeekToolCall,
+	ResponsesFunctionTool,
+	ResponsesInputImagePart,
+	ResponsesInputMessage,
+	ResponsesInputTextPart,
+} from '../types';
 import { parseFirstReplayMarker } from './replay';
 
+interface ConvertedMessages {
+	input: ResponsesInputMessage[];
+	debugMessages: DeepSeekMessage[];
+}
+
 /**
- * Convert VS Code chat messages to DeepSeek format.
- * Injects marker-replayed reasoning_content for assistant messages.
+ * Convert VS Code chat messages to Responses `input` messages.
+ * Also returns a text-only debug message list used by existing diagnostics.
  */
 export function convertMessages(
 	messages: readonly vscode.LanguageModelChatRequestMessage[],
 	isThinkingModel: boolean,
-): DeepSeekMessage[] {
-	const result: DeepSeekMessage[] = [];
+): ConvertedMessages {
+	const input: ResponsesInputMessage[] = [];
+	const debugMessages: DeepSeekMessage[] = [];
 
 	for (const message of messages) {
 		const role = mapRole(message.role);
-
-		let content = '';
+		const parts: Array<ResponsesInputTextPart | ResponsesInputImagePart> = [];
+		let debugText = '';
 		let thinkingContent = '';
 		const toolCalls: DeepSeekToolCall[] = [];
 		const toolResults: Array<{ callId: string; content: string }> = [];
 
 		for (const part of message.content) {
 			if (part instanceof vscode.LanguageModelTextPart) {
-				content += part.value;
+				if (part.value.length > 0) {
+					parts.push({ type: 'input_text', text: part.value });
+				}
+				debugText += part.value;
+			} else if (part instanceof vscode.LanguageModelDataPart && part.mimeType.startsWith('image/')) {
+				parts.push({
+					type: 'input_image',
+					image_url: toDataUrl(part.mimeType, part.data),
+				});
+				debugText += '[image]';
 			} else if (isLanguageModelThinkingPart(part)) {
 				thinkingContent += normalizeThinkingPartText(part.value);
 			} else if (part instanceof vscode.LanguageModelToolCallPart) {
@@ -49,44 +71,42 @@ export function convertMessages(
 			}
 		}
 
-		if (role === 'assistant') {
-			if (content || toolCalls.length > 0) {
-				const replayMarker = isThinkingModel ? parseFirstReplayMarker(message) : undefined;
-				const msg: DeepSeekMessage = {
-					role: 'assistant' as const,
-					content: content || '',
-				};
-
-				if (toolCalls.length > 0) {
-					msg.tool_calls = toolCalls;
-				}
-
-				if (isThinkingModel) {
-					msg.reasoning_content = getReasoningContent(replayMarker, thinkingContent);
-				}
-
-				result.push(msg);
-			}
-		} else {
-			if (content) {
-				result.push({
-					role: role as 'user' | 'assistant',
-					content: content,
-				});
-			}
+		if (parts.length > 0) {
+			input.push({ role, content: parts });
 		}
 
-		// Tool result messages follow their associated assistant message
-		for (const tr of toolResults) {
-			result.push({
+		if (role === 'assistant') {
+			if (debugText || toolCalls.length > 0) {
+				const replayMarker = isThinkingModel ? parseFirstReplayMarker(message) : undefined;
+				const debugMessage: DeepSeekMessage = {
+					role: 'assistant',
+					content: debugText || '',
+				};
+				if (toolCalls.length > 0) {
+					debugMessage.tool_calls = toolCalls;
+				}
+				if (isThinkingModel) {
+					debugMessage.reasoning_content = getReasoningContent(replayMarker, thinkingContent);
+				}
+				debugMessages.push(debugMessage);
+			}
+		} else if (debugText) {
+			debugMessages.push({
+				role,
+				content: debugText,
+			});
+		}
+
+		for (const toolResult of toolResults) {
+			debugMessages.push({
 				role: 'tool',
-				content: tr.content,
-				tool_call_id: tr.callId,
+				content: toolResult.content,
+				tool_call_id: toolResult.callId,
 			});
 		}
 	}
 
-	return result;
+	return { input, debugMessages };
 }
 
 function getReasoningContent(
@@ -110,39 +130,45 @@ function normalizeThinkingPartText(value: string | string[]): string {
 	return Array.isArray(value) ? value.join('') : value;
 }
 
-function mapRole(role: vscode.LanguageModelChatMessageRole): 'user' | 'assistant' {
+function mapRole(
+	role: vscode.LanguageModelChatMessageRole,
+): 'user' | 'assistant' | 'system' {
 	switch (role) {
 		case vscode.LanguageModelChatMessageRole.User:
 			return 'user';
 		case vscode.LanguageModelChatMessageRole.Assistant:
 			return 'assistant';
 		default:
-			return 'user';
+			return 'system';
 	}
 }
 
+function toDataUrl(mimeType: string, data: Uint8Array): string {
+	const base64 = Buffer.from(data).toString('base64');
+	return `data:${mimeType};base64,${base64}`;
+}
+
 /**
- * Convert VS Code tool definitions to DeepSeek format.
+ * Convert VS Code tool definitions to Responses tool format.
  */
 export function convertTools(
 	tools: readonly vscode.LanguageModelChatTool[] | undefined,
-): DeepSeekTool[] | undefined {
+): ResponsesFunctionTool[] | undefined {
 	if (!tools || tools.length === 0) {
 		return undefined;
 	}
 
 	return tools.map((tool) => ({
-		type: 'function' as const,
-		function: {
-			name: tool.name,
-			description: tool.description,
-			parameters: tool.inputSchema as Record<string, unknown> | undefined,
-		},
+		type: 'function',
+		name: tool.name,
+		description: tool.description,
+		parameters: tool.inputSchema as Record<string, unknown> | undefined,
+		strict: true,
 	}));
 }
 
 /**
- * Count total characters across all messages to calibrate chars-per-token ratio.
+ * Count total characters across all debug messages to calibrate chars-per-token ratio.
  */
 export function countMessageChars(messages: DeepSeekMessage[]): number {
 	let total = 0;
