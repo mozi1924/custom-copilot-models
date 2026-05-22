@@ -30,6 +30,7 @@ const zh: Translations = {
 	'auth.saved': 'API Key 已安全保存。',
 	'auth.removed': 'API Key 已移除。',
 	'auth.notConfigured': 'API Key 未配置，请在命令面板运行 "Responses: 设置 API Key"。',
+	'models.refreshUnauthorized': '模型列表刷新失败：API Key 无效或已过期，已回退到内置模型。',
 
 	// Thinking Effort — short labels for model picker dropdown
 	'status.thinking': '思考模式',
@@ -77,6 +78,8 @@ const en: Translations = {
 	'auth.removed': 'API key removed.',
 	'auth.notConfigured':
 		'API key not configured. Run "Responses: Set API Key" from the Command Palette.',
+	'models.refreshUnauthorized':
+		'Model refresh failed: the API key is invalid or expired. Falling back to built-in models.',
 
 	// Thinking Effort
 	'status.thinking': 'Thinking Effort',

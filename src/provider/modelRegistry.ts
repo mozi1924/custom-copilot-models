@@ -1,10 +1,10 @@
 import type { LanguageModelChatInformation } from 'vscode';
 import {
-	getBaseUrl,
-	getModelListTtlMinutes,
-	getModelMaxInputTokensDefault,
-	getModelMaxOutputTokensDefault,
-	getModelTokenOverrides,
+    getBaseUrl,
+    getModelListTtlMinutes,
+    getModelMaxInputTokensDefault,
+    getModelMaxOutputTokensDefault,
+    getModelTokenOverrides,
 } from '../config';
 import { FALLBACK_MODELS } from '../consts';
 import { logger } from '../logger';
@@ -34,6 +34,16 @@ interface ModelTokenSettings {
 	overrides: ReturnType<typeof getModelTokenOverrides>;
 }
 
+export class ModelListRequestError extends Error {
+	readonly status: number;
+
+	constructor(status: number) {
+		super(`Model list request failed: ${status}`);
+		this.name = 'ModelListRequestError';
+		this.status = status;
+	}
+}
+
 export class ModelRegistry {
 	private cache:
 		| {
@@ -48,6 +58,15 @@ export class ModelRegistry {
 			return this.cache.models;
 		}
 
+		if (!apiKey?.trim()) {
+			const fallback = this.getFallbackModels();
+			this.cache = {
+				models: fallback,
+				expiresAt: now + getModelListTtlMinutes() * 60_000,
+			};
+			return fallback;
+		}
+
 		try {
 			const fetched = await this.fetchModels(apiKey);
 			if (fetched.length > 0) {
@@ -58,20 +77,14 @@ export class ModelRegistry {
 				return fetched;
 			}
 		} catch (error) {
-			logger.warn('Failed to fetch remote model list; falling back to static models', error);
+			if (error instanceof ModelListRequestError && (error.status === 401 || error.status === 403)) {
+				logger.info('Remote model list unauthorized; falling back to static models');
+			} else {
+				logger.warn('Failed to fetch remote model list; falling back to static models', error);
+			}
 		}
 
-		const tokenSettings = getCurrentModelTokenSettings();
-		const fallback = FALLBACK_MODELS.map((model) =>
-			applyModelTokenSettings(
-				{
-					...model,
-					maxInputTokens: tokenSettings.defaultMaxInputTokens,
-					maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
-				},
-				tokenSettings,
-			),
-		);
+		const fallback = this.getFallbackModels();
 		this.cache = {
 			models: fallback,
 			expiresAt: now + getModelListTtlMinutes() * 60_000,
@@ -93,13 +106,27 @@ export class ModelRegistry {
 			},
 		});
 		if (!response.ok) {
-			throw new Error(`Model list request failed: ${response.status}`);
+			throw new ModelListRequestError(response.status);
 		}
 
 		const payload = (await response.json()) as ModelsApiResponse;
 		const ids = (payload.data ?? []).map((model) => model.id).filter(isLikelyChatModelId);
 
 		return ids.map((id) => toModelDefinition(id, tokenSettings));
+	}
+
+	private getFallbackModels(): ModelDefinition[] {
+		const tokenSettings = getCurrentModelTokenSettings();
+		return FALLBACK_MODELS.map((model) =>
+			applyModelTokenSettings(
+				{
+					...model,
+					maxInputTokens: tokenSettings.defaultMaxInputTokens,
+					maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
+				},
+				tokenSettings,
+			),
+		);
 	}
 }
 

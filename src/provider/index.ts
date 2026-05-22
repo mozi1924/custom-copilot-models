@@ -5,11 +5,11 @@ import { CONFIG_SECTION } from '../consts';
 import { t } from '../i18n';
 import { logger } from '../logger';
 import {
-	classifyProviderRequest,
-	createCacheDiagnosticsRecorder,
-	dumpProviderInput,
+    classifyProviderRequest,
+    createCacheDiagnosticsRecorder,
+    dumpProviderInput,
 } from './debug';
-import { ModelRegistry } from './modelRegistry';
+import { ModelListRequestError, ModelRegistry } from './modelRegistry';
 import { toChatInfo } from './models';
 import { prepareChatRequest } from './request';
 import { resolveConversationSegment } from './segment';
@@ -84,7 +84,22 @@ export class ResponsesChatProvider implements vscode.LanguageModelChatProvider {
 	async refreshRemoteModels(): Promise<void> {
 		this.modelRegistry.invalidate();
 		const apiKey = await this.authManager.getApiKey();
-		await this.modelRegistry.listModels(apiKey, true);
+		if (!apiKey?.trim()) {
+			void vscode.window.showWarningMessage(t('auth.notConfigured'));
+			this.onDidChangeLanguageModelChatInformationEmitter.fire();
+			return;
+		}
+
+		try {
+			await this.modelRegistry.listModels(apiKey, true);
+		} catch (error) {
+			if (error instanceof ModelListRequestError && (error.status === 401 || error.status === 403)) {
+				void vscode.window.showWarningMessage(t('models.refreshUnauthorized'));
+				logger.info('Model refresh unauthorized; keeping fallback models');
+			} else {
+				throw error;
+			}
+		}
 		this.onDidChangeLanguageModelChatInformationEmitter.fire();
 	}
 
