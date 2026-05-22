@@ -24,7 +24,7 @@ export const WELCOME_SHOWN_KEY = 'responses-copilot.welcomeShown';
 // ---- Walkthrough ----
 
 /** Walkthrough contribution ID. */
-export const WALKTHROUGH_ID = 'Vizards.responses-copilot#responsesGettingStarted';
+export const WALKTHROUGH_ID = 'mozi1924.responses-copilot#responsesGettingStarted';
 
 // ---- Model registry ----
 
