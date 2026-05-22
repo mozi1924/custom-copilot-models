@@ -3,7 +3,7 @@
   "displayName": "Responses Copilot",
   "description": "Use OpenAI-compatible Responses API models directly in the Copilot Chat model picker with native image input and tool calling.",
   "icon": "resources/icon.png",
-  "version": "0.6.0",
+  "version": "0.1.0",
   "publisher": "mozi1924",
   "license": "MIT",
   "repository": {
