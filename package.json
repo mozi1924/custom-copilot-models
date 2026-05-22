@@ -42,7 +42,8 @@
     "languageModelChatProviders": [
       {
         "vendor": "responses-copilot",
-        "displayName": "Responses Copilot"
+        "displayName": "Responses Copilot",
+        "managementCommand": "responses-copilot.openSettings"
       }
     ],
     "commands": [

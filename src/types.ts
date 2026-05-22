@@ -113,6 +113,8 @@ export interface ResponsesRequest {
 	input: ResponsesInputItem[];
 	stream: boolean;
 	previous_response_id?: string;
+	temperature?: number;
+	top_p?: number;
 	max_output_tokens?: number;
 	tools?: ResponsesFunctionTool[];
 	tool_choice?: 'none' | 'auto' | 'required';

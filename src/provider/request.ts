@@ -61,7 +61,10 @@ export async function prepareChatRequest({
 	const modelDef = FALLBACK_MODELS.find((m) => m.id === modelInfo.id);
 	const isThinkingModel = modelDef?.capabilities.thinking ?? true;
 	const thinkingEffort = getConfiguredThinkingEffort(options as ModelConfigurationOptions);
-	const maxOutputTokens = getMaxOutputTokens();
+	const configuredMaxOutputTokens = getMaxOutputTokens();
+	const modelOptionOverrides = resolveModelOptionOverrides(options.modelOptions);
+	const effectiveMaxOutputTokens =
+		modelOptionOverrides.maxOutputTokens ?? configuredMaxOutputTokens;
 	const previousResponseId = resolvePreviousResponseId(messages, segment);
 	const requestMessages = resolveRequestMessages(messages, segment, previousResponseId);
 	const converted = convertMessages(requestMessages, isThinkingModel);
@@ -77,7 +80,9 @@ export async function prepareChatRequest({
 		previous_response_id: previousResponseId,
 		tools,
 		tool_choice: toolChoice,
-		max_output_tokens: maxOutputTokens,
+		max_output_tokens: effectiveMaxOutputTokens,
+		temperature: modelOptionOverrides.temperature,
+		top_p: modelOptionOverrides.topP,
 		...(isThinkingModel ? { reasoning: { effort: thinkingEffort } } : {}),
 	};
 
@@ -96,6 +101,8 @@ export async function prepareChatRequest({
 			},
 		})),
 		tool_choice: request.tool_choice,
+		temperature: request.temperature,
+		top_p: request.top_p,
 		max_tokens: request.max_output_tokens,
 		reasoning_effort: request.reasoning?.effort,
 	};
@@ -109,25 +116,25 @@ export async function prepareChatRequest({
 		globalStorageUri,
 		segment,
 		requestKind,
-		vscodeModelId: modelInfo.id,
-		isThinkingModel,
-		thinkingEffort,
-		maxTokens: maxOutputTokens,
-		inputMessages: messages,
-		resolvedMessages: requestMessages,
-		requestOptions: options,
+			vscodeModelId: modelInfo.id,
+			isThinkingModel,
+			thinkingEffort,
+			maxTokens: effectiveMaxOutputTokens,
+			inputMessages: messages,
+			resolvedMessages: requestMessages,
+			requestOptions: options,
 	});
 
 	const diagnosticsRun = cacheDiagnostics.beginRequest({
 		request: debugRequest,
 		segment,
 		requestKind,
-		vscodeModelId: modelInfo.id,
-		isThinkingModel,
-		thinkingEffort,
-		maxTokens: maxOutputTokens,
-		inputMessages: messages,
-		resolvedMessages: requestMessages,
+			vscodeModelId: modelInfo.id,
+			isThinkingModel,
+			thinkingEffort,
+			maxTokens: effectiveMaxOutputTokens,
+			inputMessages: messages,
+			resolvedMessages: requestMessages,
 	});
 
 	return {
@@ -175,4 +182,36 @@ function resolveRequestMessages(
 
 	const deltaMessages = messages.slice(segment.markerMessageIndex + 1);
 	return deltaMessages.length > 0 ? deltaMessages : messages;
+}
+
+function resolveModelOptionOverrides(
+	modelOptions: vscode.ProvideLanguageModelChatResponseOptions['modelOptions'],
+): {
+	maxOutputTokens?: number;
+	temperature?: number;
+	topP?: number;
+} {
+	if (!modelOptions || typeof modelOptions !== 'object' || Array.isArray(modelOptions)) {
+		return {};
+	}
+	const options = modelOptions as Record<string, unknown>;
+
+	return {
+		maxOutputTokens: getPositiveInteger(
+			options.max_output_tokens,
+			getPositiveInteger(options.maxOutputTokens, getPositiveInteger(options.maxTokens, undefined)),
+		),
+		temperature: getFiniteNumber(options.temperature, undefined),
+		topP: getFiniteNumber(options.top_p, getFiniteNumber(options.topP, undefined)),
+	};
+}
+
+function getFiniteNumber(value: unknown, fallback: number | undefined): number | undefined {
+	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function getPositiveInteger(value: unknown, fallback: number | undefined): number | undefined {
+	return typeof value === 'number' && Number.isFinite(value) && value > 0
+		? Math.floor(value)
+		: fallback;
 }

@@ -12,11 +12,26 @@ import type {
 } from './types';
 import WebSocket, { type RawData } from 'ws';
 
+interface ReusableWebSocketSession {
+	key: string;
+	ws: WebSocket;
+	ready: Promise<void>;
+	createdAt: number;
+	lastUsedAt: number;
+	inFlight: boolean;
+	closed: boolean;
+}
+
+const WS_SESSION_MAX_LIFETIME_MS = 55 * 60_000;
+const WS_SESSION_IDLE_TTL_MS = 5 * 60_000;
+
 /**
  * Responses API streaming client with dual transport:
  * WebSocket mode (preferred) with HTTP SSE fallback.
  */
 export class ResponsesClient {
+	private static readonly wsSessions = new Map<string, ReusableWebSocketSession>();
+
 	constructor(
 		private readonly baseUrl: string,
 		private readonly apiKey: string,
@@ -27,6 +42,7 @@ export class ResponsesClient {
 		callbacks: StreamCallbacks,
 		cancellationToken?: CancellationToken,
 		transportMode: StreamingTransportMode = 'websocketPreferred',
+		sessionKey?: string,
 	): Promise<void> {
 		if (transportMode === 'httpOnly') {
 			await this.streamResponseHttp(request, callbacks, cancellationToken);
@@ -34,7 +50,12 @@ export class ResponsesClient {
 		}
 
 		try {
-			await this.streamResponseWebSocket(request, callbacks, cancellationToken);
+			await this.streamResponseWebSocket(
+				request,
+				callbacks,
+				cancellationToken,
+				sessionKey,
+			);
 			return;
 		} catch (error) {
 			if (transportMode === 'websocketOnly' || cancellationToken?.isCancellationRequested) {
@@ -153,27 +174,37 @@ export class ResponsesClient {
 		request: ResponsesRequest,
 		callbacks: StreamCallbacks,
 		cancellationToken?: CancellationToken,
+		sessionKey?: string,
 	): Promise<void> {
+		this.pruneWebSocketSessions();
 		const wsUrl = toResponsesWebSocketUrl(this.baseUrl);
 		const createPayload = createWebSocketCreatePayload(request);
+		const session = this.getOrCreateWebSocketSession(wsUrl, sessionKey);
+
+		await waitForWebSocketReady(session, cancellationToken);
+		if (session.inFlight) {
+			throw new Error('Responses WebSocket session is busy');
+		}
+		session.inFlight = true;
+		session.lastUsedAt = Date.now();
 
 		await new Promise<void>((resolve, reject) => {
 			let settled = false;
 			let completed = false;
 			const pendingToolCalls = new Map<string, DeepSeekToolCall>();
 			const emittedToolCallItemIds = new Set<string>();
-			const ws = new WebSocket(wsUrl, {
-				headers: {
-					Authorization: `Bearer ${this.apiKey}`,
-				},
-			});
+			const ws = session.ws;
+			let cleanupListeners = () => {};
 
 			const settleResolve = () => {
 				if (settled) {
 					return;
 				}
 				settled = true;
+				cleanupListeners();
 				cancelListener?.dispose();
+				session.inFlight = false;
+				session.lastUsedAt = Date.now();
 				resolve();
 			};
 
@@ -182,7 +213,9 @@ export class ResponsesClient {
 					return;
 				}
 				settled = true;
+				cleanupListeners();
 				cancelListener?.dispose();
+				session.inFlight = false;
 				safeCloseWebSocket(ws, 1011, 'error');
 				reject(error);
 			};
@@ -192,53 +225,43 @@ export class ResponsesClient {
 					return;
 				}
 				safeCloseWebSocket(ws, 1000, 'cancelled');
-				settleResolve();
+				settleReject(createAbortError());
 			});
 
 			if (cancellationToken?.isCancellationRequested) {
 				safeCloseWebSocket(ws, 1000, 'cancelled');
-				settleResolve();
+				settleReject(createAbortError());
 				return;
 			}
 
-			ws.on('open', () => {
-				if (cancellationToken?.isCancellationRequested) {
-					safeCloseWebSocket(ws, 1000, 'cancelled');
-					settleResolve();
-					return;
-				}
-				ws.send(JSON.stringify(createPayload));
-			});
-
-			ws.on('message', (data: RawData) => {
+			const onMessage = (data: RawData) => {
 				if (settled) {
 					return;
 				}
 				try {
 					const event = JSON.parse(rawDataToString(data)) as ResponsesStreamEvent;
-					if (event.type === 'error') {
-						settleReject(new Error(formatWebSocketEventError(event)));
-						return;
-					}
+						if (event.type === 'error') {
+							settleReject(new Error(formatWebSocketEventError(event)));
+							return;
+						}
 
 						this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
 						if (event.type === 'response.completed') {
-						flushPendingToolCalls(
-							pendingToolCalls,
-							emittedToolCallItemIds,
-							callbacks,
-						);
+							flushPendingToolCalls(
+								pendingToolCalls,
+								emittedToolCallItemIds,
+								callbacks,
+							);
 						completed = true;
 						callbacks.onDone();
-						safeCloseWebSocket(ws, 1000, 'completed');
 						settleResolve();
 					}
 				} catch (error) {
 					logger.error('Failed to parse Responses WebSocket event', error);
 				}
-			});
+			};
 
-			ws.on('close', (code: number, reasonBuffer: Buffer) => {
+			const onClose = (code: number, reasonBuffer: Buffer) => {
 				if (settled) {
 					return;
 				}
@@ -252,9 +275,9 @@ export class ResponsesClient {
 						`Responses WebSocket closed before completion (code=${code}, reason=${reason || 'none'})`,
 					),
 				);
-			});
+			};
 
-			ws.on('error', (error: Error) => {
+			const onError = (error: Error) => {
 				if (settled) {
 					return;
 				}
@@ -263,8 +286,81 @@ export class ResponsesClient {
 						? error
 						: new Error(`Responses WebSocket error: ${String(error)}`),
 				);
+			};
+
+				ws.on('message', onMessage);
+				ws.on('close', onClose);
+				ws.on('error', onError);
+
+				cleanupListeners = () => {
+					ws.off('message', onMessage);
+					ws.off('close', onClose);
+					ws.off('error', onError);
+				};
+
+				ws.send(JSON.stringify(createPayload));
 			});
+	}
+
+	private getOrCreateWebSocketSession(
+		wsUrl: string,
+		sessionKey?: string,
+	): ReusableWebSocketSession {
+		const key = `${wsUrl}|${this.apiKey}|${sessionKey ?? 'default'}`;
+		const existing = ResponsesClient.wsSessions.get(key);
+		if (existing && !existing.closed) {
+			return existing;
+		}
+
+		const ws = new WebSocket(wsUrl, {
+			headers: {
+				Authorization: `Bearer ${this.apiKey}`,
+			},
 		});
+
+		const session: ReusableWebSocketSession = {
+			key,
+			ws,
+			createdAt: Date.now(),
+			lastUsedAt: Date.now(),
+			inFlight: false,
+			closed: false,
+			ready: new Promise<void>((resolve, reject) => {
+				ws.once('open', () => resolve());
+				ws.once('error', (error: Error) =>
+					reject(
+						error instanceof Error
+							? error
+							: new Error(`Responses WebSocket open failed: ${String(error)}`),
+					),
+				);
+			}),
+		};
+
+		ws.on('close', () => {
+			session.closed = true;
+			if (ResponsesClient.wsSessions.get(key) === session) {
+				ResponsesClient.wsSessions.delete(key);
+			}
+		});
+
+		ResponsesClient.wsSessions.set(key, session);
+		return session;
+	}
+
+	private pruneWebSocketSessions(): void {
+		const now = Date.now();
+		for (const [key, session] of ResponsesClient.wsSessions) {
+			if (session.inFlight) {
+				continue;
+			}
+			const idle = now - session.lastUsedAt;
+			const age = now - session.createdAt;
+			if (session.closed || idle > WS_SESSION_IDLE_TTL_MS || age > WS_SESSION_MAX_LIFETIME_MS) {
+				safeCloseWebSocket(session.ws, 1000, 'session-pruned');
+				ResponsesClient.wsSessions.delete(key);
+			}
+		}
 	}
 
 	private handleEvent(
@@ -470,6 +566,31 @@ function safeCloseWebSocket(ws: WebSocket, code: number, reason: string): void {
 	}
 }
 
+async function waitForWebSocketReady(
+	session: ReusableWebSocketSession,
+	cancellationToken?: CancellationToken,
+): Promise<void> {
+	if (session.closed || session.ws.readyState === WebSocket.CLOSED) {
+		throw new Error('Responses WebSocket session is already closed');
+	}
+	if (session.ws.readyState === WebSocket.OPEN) {
+		return;
+	}
+	if (cancellationToken?.isCancellationRequested) {
+		throw createAbortError();
+	}
+
+	await Promise.race([
+		session.ready,
+		new Promise<never>((_, reject) => {
+			const listener = cancellationToken?.onCancellationRequested(() => {
+				listener?.dispose();
+				reject(createAbortError());
+			});
+		}),
+	]);
+}
+
 function bufferToString(value: Buffer | Uint8Array): string {
 	if (!value || value.length === 0) {
 		return '';
@@ -500,4 +621,10 @@ function mapResponsesUsage(usage: {
 
 function isAbortError(error: unknown): boolean {
 	return error instanceof Error && error.name === 'AbortError';
+}
+
+function createAbortError(): Error {
+	const error = new Error('Request cancelled');
+	error.name = 'AbortError';
+	return error;
 }
