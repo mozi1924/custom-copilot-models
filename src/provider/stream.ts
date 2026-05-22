@@ -118,13 +118,23 @@ async function streamWithReasoningFallback(
 	token: vscode.CancellationToken,
 ): Promise<void> {
 	try {
-		await prepared.client.streamResponse(prepared.request, callbacks, token);
+		await prepared.client.streamResponse(
+			prepared.request,
+			callbacks,
+			token,
+			prepared.streamingTransportMode,
+		);
 	} catch (error) {
 		if (!shouldRetryWithoutReasoning(prepared.request, error)) {
 			throw error;
 		}
 		prepared.request.reasoning = undefined;
-		await prepared.client.streamResponse(prepared.request, callbacks, token);
+		await prepared.client.streamResponse(
+			prepared.request,
+			callbacks,
+			token,
+			prepared.streamingTransportMode,
+		);
 	}
 }
 

@@ -1,7 +1,7 @@
 import vscode from 'vscode';
 import { AuthManager } from '../auth';
 import { ResponsesClient } from '../client';
-import { getBaseUrl, getMaxOutputTokens } from '../config';
+import { getBaseUrl, getMaxOutputTokens, getStreamingTransportMode } from '../config';
 import { FALLBACK_MODELS } from '../consts';
 import { t } from '../i18n';
 import type { DeepSeekRequest, ResponsesRequest } from '../types';
@@ -29,6 +29,7 @@ export interface PreparedChatRequest {
 	requestKind: RequestKind;
 	segment: ConversationSegment;
 	replayMarkerMetadata: ReplayMarkerMetadata;
+	streamingTransportMode: ReturnType<typeof getStreamingTransportMode>;
 }
 
 export interface PrepareChatRequestOptions {
@@ -133,5 +134,6 @@ export async function prepareChatRequest({
 		requestKind,
 		segment,
 		replayMarkerMetadata: {},
+		streamingTransportMode: getStreamingTransportMode(),
 	};
 }

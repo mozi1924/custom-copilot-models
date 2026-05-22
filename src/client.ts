@@ -1,17 +1,20 @@
 import type { CancellationToken } from 'vscode';
+import type { StreamingTransportMode } from './config';
 import { safeStringify } from './json';
 import { logger } from './logger';
 import type {
 	DeepSeekToolCall,
 	DeepSeekUsage,
+	ResponsesFunctionCallItem,
 	ResponsesRequest,
 	ResponsesStreamEvent,
 	StreamCallbacks,
 } from './types';
+import WebSocket, { type RawData } from 'ws';
 
 /**
- * Lightweight SSE-streaming Responses API client.
- * No external dependencies - uses Node's built-in fetch.
+ * Responses API streaming client with dual transport:
+ * WebSocket mode (preferred) with HTTP SSE fallback.
  */
 export class ResponsesClient {
 	constructor(
@@ -20,6 +23,33 @@ export class ResponsesClient {
 	) {}
 
 	async streamResponse(
+		request: ResponsesRequest,
+		callbacks: StreamCallbacks,
+		cancellationToken?: CancellationToken,
+		transportMode: StreamingTransportMode = 'websocketPreferred',
+	): Promise<void> {
+		if (transportMode === 'httpOnly') {
+			await this.streamResponseHttp(request, callbacks, cancellationToken);
+			return;
+		}
+
+		try {
+			await this.streamResponseWebSocket(request, callbacks, cancellationToken);
+			return;
+		} catch (error) {
+			if (transportMode === 'websocketOnly' || cancellationToken?.isCancellationRequested) {
+				throw error;
+			}
+			logger.warn(
+				'WebSocket mode failed; falling back to HTTP SSE',
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+
+		await this.streamResponseHttp(request, callbacks, cancellationToken);
+	}
+
+	private async streamResponseHttp(
 		request: ResponsesRequest,
 		callbacks: StreamCallbacks,
 		cancellationToken?: CancellationToken,
@@ -119,6 +149,124 @@ export class ResponsesClient {
 		}
 	}
 
+	private async streamResponseWebSocket(
+		request: ResponsesRequest,
+		callbacks: StreamCallbacks,
+		cancellationToken?: CancellationToken,
+	): Promise<void> {
+		const wsUrl = toResponsesWebSocketUrl(this.baseUrl);
+		const createPayload = createWebSocketCreatePayload(request);
+
+		await new Promise<void>((resolve, reject) => {
+			let settled = false;
+			let completed = false;
+			const pendingToolCalls = new Map<string, DeepSeekToolCall>();
+			const emittedToolCallItemIds = new Set<string>();
+			const ws = new WebSocket(wsUrl, {
+				headers: {
+					Authorization: `Bearer ${this.apiKey}`,
+				},
+			});
+
+			const settleResolve = () => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				cancelListener?.dispose();
+				resolve();
+			};
+
+			const settleReject = (error: Error) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				cancelListener?.dispose();
+				safeCloseWebSocket(ws, 1011, 'error');
+				reject(error);
+			};
+
+			const cancelListener = cancellationToken?.onCancellationRequested(() => {
+				if (settled) {
+					return;
+				}
+				safeCloseWebSocket(ws, 1000, 'cancelled');
+				settleResolve();
+			});
+
+			if (cancellationToken?.isCancellationRequested) {
+				safeCloseWebSocket(ws, 1000, 'cancelled');
+				settleResolve();
+				return;
+			}
+
+			ws.on('open', () => {
+				if (cancellationToken?.isCancellationRequested) {
+					safeCloseWebSocket(ws, 1000, 'cancelled');
+					settleResolve();
+					return;
+				}
+				ws.send(JSON.stringify(createPayload));
+			});
+
+			ws.on('message', (data: RawData) => {
+				if (settled) {
+					return;
+				}
+				try {
+					const event = JSON.parse(rawDataToString(data)) as ResponsesStreamEvent;
+					if (event.type === 'error') {
+						settleReject(new Error(formatWebSocketEventError(event)));
+						return;
+					}
+
+					this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
+					if (event.type === 'response.completed') {
+						flushPendingToolCalls(
+							pendingToolCalls,
+							emittedToolCallItemIds,
+							callbacks,
+						);
+						completed = true;
+						callbacks.onDone();
+						safeCloseWebSocket(ws, 1000, 'completed');
+						settleResolve();
+					}
+				} catch (error) {
+					logger.error('Failed to parse Responses WebSocket event', error);
+				}
+			});
+
+			ws.on('close', (code: number, reasonBuffer: Buffer) => {
+				if (settled) {
+					return;
+				}
+				if (cancellationToken?.isCancellationRequested || completed) {
+					settleResolve();
+					return;
+				}
+				const reason = bufferToString(reasonBuffer);
+				settleReject(
+					new Error(
+						`Responses WebSocket closed before completion (code=${code}, reason=${reason || 'none'})`,
+					),
+				);
+			});
+
+			ws.on('error', (error: Error) => {
+				if (settled) {
+					return;
+				}
+				settleReject(
+					error instanceof Error
+						? error
+						: new Error(`Responses WebSocket error: ${String(error)}`),
+				);
+			});
+		});
+	}
+
 	private handleEvent(
 		event: ResponsesStreamEvent,
 		pendingToolCalls: Map<string, DeepSeekToolCall>,
@@ -134,7 +282,7 @@ export class ResponsesClient {
 			}
 			case 'response.output_item.added': {
 				const item = event.item;
-				if (!item || item.type !== 'function_call') {
+				if (!isFunctionCallItem(item)) {
 					break;
 				}
 				pendingToolCalls.set(item.id, {
@@ -160,7 +308,7 @@ export class ResponsesClient {
 			}
 			case 'response.function_call_arguments.done': {
 				const item = event.item;
-				if (!item || item.type !== 'function_call') {
+				if (!isFunctionCallItem(item)) {
 					break;
 				}
 				this.emitToolCallFromItem(
@@ -173,7 +321,7 @@ export class ResponsesClient {
 			}
 			case 'response.output_item.done': {
 				const item = event.item;
-				if (!item || item.type !== 'function_call') {
+				if (!isFunctionCallItem(item)) {
 					break;
 				}
 				// Some gateways emit function calls only in output_item.done.
@@ -232,6 +380,104 @@ export class ResponsesClient {
 		emittedToolCallItemIds.add(item.id);
 		pendingToolCalls.delete(item.id);
 	}
+}
+
+function isFunctionCallItem(item: unknown): item is ResponsesFunctionCallItem {
+	return Boolean(
+		item &&
+			typeof item === 'object' &&
+			(item as { type?: unknown }).type === 'function_call' &&
+			typeof (item as { id?: unknown }).id === 'string',
+	);
+}
+
+function createWebSocketCreatePayload(request: ResponsesRequest): Record<string, unknown> {
+	return {
+		type: 'response.create',
+		...request,
+		stream: true,
+	};
+}
+
+function toResponsesWebSocketUrl(baseUrl: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(baseUrl);
+	} catch {
+		throw new Error(`Invalid base URL for WebSocket mode: ${baseUrl}`);
+	}
+
+	if (parsed.protocol === 'https:') {
+		parsed.protocol = 'wss:';
+	} else if (parsed.protocol === 'http:') {
+		parsed.protocol = 'ws:';
+	} else if (parsed.protocol !== 'wss:' && parsed.protocol !== 'ws:') {
+		throw new Error(`Unsupported base URL protocol for WebSocket mode: ${parsed.protocol}`);
+	}
+
+	const path = parsed.pathname.replace(/\/+$/, '');
+	parsed.pathname = `${path}/responses`;
+	parsed.search = '';
+	parsed.hash = '';
+	return parsed.toString();
+}
+
+function rawDataToString(data: RawData): string {
+	if (typeof data === 'string') {
+		return data;
+	}
+	if (data instanceof ArrayBuffer) {
+		return Buffer.from(data).toString('utf8');
+	}
+	if (Array.isArray(data)) {
+		return Buffer.concat(data.map((chunk) => Buffer.from(chunk))).toString('utf8');
+	}
+	return data.toString('utf8');
+}
+
+function flushPendingToolCalls(
+	pendingToolCalls: Map<string, DeepSeekToolCall>,
+	emittedToolCallItemIds: Set<string>,
+	callbacks: StreamCallbacks,
+): void {
+	for (const [itemId, pending] of pendingToolCalls) {
+		if (!emittedToolCallItemIds.has(itemId)) {
+			callbacks.onToolCall(pending);
+			emittedToolCallItemIds.add(itemId);
+		}
+	}
+}
+
+function safeCloseWebSocket(ws: WebSocket, code: number, reason: string): void {
+	if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+		return;
+	}
+	try {
+		ws.close(code, reason);
+	} catch {
+		// ignore
+	}
+}
+
+function bufferToString(value: Buffer | Uint8Array): string {
+	if (!value || value.length === 0) {
+		return '';
+	}
+	return Buffer.from(value).toString('utf8');
+}
+
+function formatWebSocketEventError(event: ResponsesStreamEvent): string {
+	const payload = event as {
+		error?: {
+			code?: string;
+			message?: string;
+		};
+		status?: number;
+	};
+	const code = payload.error?.code;
+	const message = payload.error?.message ?? 'Unknown WebSocket error event';
+	const status = payload.status ? ` status=${payload.status}` : '';
+	return `Responses WebSocket event error:${status}${code ? ` code=${code}` : ''} message=${message}`;
 }
 
 function mapResponsesUsage(usage: {

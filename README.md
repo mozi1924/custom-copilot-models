@@ -25,6 +25,7 @@
 | `responses-copilot.maxOutputTokens` | `0` | Max output tokens (`0` = unlimited / omit field) |
 | `responses-copilot.modelListTtlMinutes` | `30` | `/models` cache TTL |
 | `responses-copilot.reasoningEffortDefault` | `medium` | Default reasoning effort (`none/minimal/low/medium/high/xhigh`) |
+| `responses-copilot.streamingTransport` | `websocketPreferred` | Streaming transport (`websocketPreferred` -> `httpOnly` fallback, `httpOnly`, `websocketOnly`) |
 | `responses-copilot.experimental.stabilizeToolList` | `false` | Pre-activate host `activate_*` virtual tools to stabilize tool list across turns |
 | `responses-copilot.debugMode` | `minimal` | `minimal`, `metadata`, `verbose` |
 

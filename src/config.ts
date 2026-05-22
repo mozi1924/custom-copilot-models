@@ -3,6 +3,7 @@ import { CONFIG_SECTION } from './consts';
 
 export type DebugMode = 'minimal' | 'metadata' | 'verbose';
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type StreamingTransportMode = 'websocketPreferred' | 'httpOnly' | 'websocketOnly';
 export interface ModelTokenOverride {
 	maxInputTokens?: number;
 	maxOutputTokens?: number;
@@ -115,6 +116,12 @@ export function getStabilizeToolListEnabled(): boolean {
 	return config.get<boolean>('experimental.stabilizeToolList', false);
 }
 
+export function getStreamingTransportMode(): StreamingTransportMode {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	const value = config.get<string>('streamingTransport', 'websocketPreferred');
+	return normalizeStreamingTransportMode(value) ?? 'websocketPreferred';
+}
+
 /**
  * Migrate the legacy boolean `responses-copilot.debug` setting to `debugMode`.
  *
@@ -160,6 +167,13 @@ function getConfiguredDebugMode(config: vscode.WorkspaceConfiguration): DebugMod
 
 function normalizeDebugMode(value: unknown): DebugMode | undefined {
 	if (value === 'minimal' || value === 'metadata' || value === 'verbose') {
+		return value;
+	}
+	return undefined;
+}
+
+function normalizeStreamingTransportMode(value: unknown): StreamingTransportMode | undefined {
+	if (value === 'websocketPreferred' || value === 'httpOnly' || value === 'websocketOnly') {
 		return value;
 	}
 	return undefined;

@@ -161,6 +161,26 @@
           ],
           "description": "%responses-copilot.config.reasoningEffortDefault.description%"
         },
+        "responses-copilot.streamingTransport": {
+          "type": "string",
+          "default": "websocketPreferred",
+          "enum": [
+            "websocketPreferred",
+            "httpOnly",
+            "websocketOnly"
+          ],
+          "enumItemLabels": [
+            "%responses-copilot.config.streamingTransport.websocketPreferred.label%",
+            "%responses-copilot.config.streamingTransport.httpOnly.label%",
+            "%responses-copilot.config.streamingTransport.websocketOnly.label%"
+          ],
+          "markdownEnumDescriptions": [
+            "%responses-copilot.config.streamingTransport.websocketPreferred.description%",
+            "%responses-copilot.config.streamingTransport.httpOnly.description%",
+            "%responses-copilot.config.streamingTransport.websocketOnly.description%"
+          ],
+          "markdownDescription": "%responses-copilot.config.streamingTransport.description%"
+        },
         "responses-copilot.experimental.stabilizeToolList": {
           "type": "boolean",
           "default": false,
@@ -203,9 +223,13 @@
     "package": "vsce package --readme-path dist/README.marketplace.md -o dist/",
     "login": "vsce login Vizards"
   },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@types/vscode": "^1.116.0",
+    "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.9.1",
     "ovsx": "0.10.12",
     "oxfmt": "^0.47.0",
