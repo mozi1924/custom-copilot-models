@@ -63,6 +63,7 @@ export class ResponsesClient {
 			const decoder = new TextDecoder();
 			let buffer = '';
 			const pendingToolCalls = new Map<string, DeepSeekToolCall>();
+			const emittedToolCallItemIds = new Set<string>();
 
 			while (true) {
 				if (cancellationToken?.isCancellationRequested) {
@@ -88,8 +89,16 @@ export class ResponsesClient {
 					const jsonStr = trimmed.slice(6);
 					try {
 						const event = JSON.parse(jsonStr) as ResponsesStreamEvent;
-						this.handleEvent(event, pendingToolCalls, callbacks);
+						this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
 						if (event.type === 'response.completed') {
+							// Some gateways may skip function_call_arguments.done and only keep
+							// the latest function_call state in output_item events.
+							for (const [itemId, pending] of pendingToolCalls) {
+								if (!emittedToolCallItemIds.has(itemId)) {
+									callbacks.onToolCall(pending);
+									emittedToolCallItemIds.add(itemId);
+								}
+							}
 							callbacks.onDone();
 							return;
 						}
@@ -113,6 +122,7 @@ export class ResponsesClient {
 	private handleEvent(
 		event: ResponsesStreamEvent,
 		pendingToolCalls: Map<string, DeepSeekToolCall>,
+		emittedToolCallItemIds: Set<string>,
 		callbacks: StreamCallbacks,
 	): void {
 		switch (event.type) {
@@ -153,24 +163,26 @@ export class ResponsesClient {
 				if (!item || item.type !== 'function_call') {
 					break;
 				}
-				const pending = pendingToolCalls.get(item.id);
-				const toolCall = pending ?? {
-					id: item.call_id || item.id,
-					call_id: item.call_id,
-					type: 'function',
-					function: {
-						name: item.name,
-						arguments: item.arguments || '',
-					},
-				};
-				if (!toolCall.function.name) {
-					toolCall.function.name = item.name;
+				this.emitToolCallFromItem(
+					item,
+					pendingToolCalls,
+					emittedToolCallItemIds,
+					callbacks,
+				);
+				break;
+			}
+			case 'response.output_item.done': {
+				const item = event.item;
+				if (!item || item.type !== 'function_call') {
+					break;
 				}
-				if (item.arguments) {
-					toolCall.function.arguments = item.arguments;
-				}
-				callbacks.onToolCall(toolCall);
-				pendingToolCalls.delete(item.id);
+				// Some gateways emit function calls only in output_item.done.
+				this.emitToolCallFromItem(
+					item,
+					pendingToolCalls,
+					emittedToolCallItemIds,
+					callbacks,
+				);
 				break;
 			}
 			case 'response.completed': {
@@ -183,6 +195,42 @@ export class ResponsesClient {
 			default:
 				break;
 		}
+	}
+
+	private emitToolCallFromItem(
+		item: {
+			id: string;
+			call_id?: string;
+			name: string;
+			arguments: string;
+		},
+		pendingToolCalls: Map<string, DeepSeekToolCall>,
+		emittedToolCallItemIds: Set<string>,
+		callbacks: StreamCallbacks,
+	): void {
+		if (emittedToolCallItemIds.has(item.id)) {
+			return;
+		}
+
+		const pending = pendingToolCalls.get(item.id);
+		const toolCall = pending ?? {
+			id: item.call_id || item.id,
+			call_id: item.call_id,
+			type: 'function' as const,
+			function: {
+				name: item.name,
+				arguments: item.arguments || '',
+			},
+		};
+		if (!toolCall.function.name) {
+			toolCall.function.name = item.name;
+		}
+		if (item.arguments) {
+			toolCall.function.arguments = item.arguments;
+		}
+		callbacks.onToolCall(toolCall);
+		emittedToolCallItemIds.add(item.id);
+		pendingToolCalls.delete(item.id);
 	}
 }
 
@@ -203,4 +251,3 @@ function mapResponsesUsage(usage: {
 function isAbortError(error: unknown): boolean {
 	return error instanceof Error && error.name === 'AbortError';
 }
-

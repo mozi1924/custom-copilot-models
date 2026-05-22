@@ -58,7 +58,7 @@ export function getDebugLoggingEnabled(): boolean {
 }
 
 /**
- * Whether to write full DeepSeek request payloads to disk.
+ * Whether to write full upstream request payloads to disk.
  */
 export function getRequestDumpEnabled(): boolean {
 	return getDebugMode() === 'verbose';

@@ -2,7 +2,7 @@ import vscode from 'vscode';
 import { t } from '../../i18n';
 import type { DeepSeekMessage, ResponsesFunctionTool } from '../../types';
 import { convertTools } from '../convert';
-import { DEEPSEEK_TOOLS_LIMIT } from './consts';
+import { DEFAULT_TOOLS_LIMIT } from './consts';
 
 export function prepareRequestTools(
 	toolCallingCapability: boolean | number | undefined,
@@ -30,5 +30,5 @@ export function collectTrailingToolResultIds(messages: readonly DeepSeekMessage[
 }
 
 function getToolCallingLimit(toolCallingCapability: boolean | number | undefined): number {
-	return typeof toolCallingCapability === 'number' ? toolCallingCapability : DEEPSEEK_TOOLS_LIMIT;
+	return typeof toolCallingCapability === 'number' ? toolCallingCapability : DEFAULT_TOOLS_LIMIT;
 }

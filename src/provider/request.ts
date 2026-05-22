@@ -29,7 +29,6 @@ export interface PreparedChatRequest {
 	requestKind: RequestKind;
 	segment: ConversationSegment;
 	replayMarkerMetadata: ReplayMarkerMetadata;
-	visionMarkerTextChars?: number;
 }
 
 export interface PrepareChatRequestOptions {
@@ -136,4 +135,3 @@ export async function prepareChatRequest({
 		replayMarkerMetadata: {},
 	};
 }
-

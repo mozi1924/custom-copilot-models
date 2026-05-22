@@ -1,6 +1,6 @@
-// DeepSeek Chat Completions API: "A max of 128 functions are supported."
-// https://api-docs.deepseek.com/api/create-chat-completion#:~:text=A%20max%20of%20128%20functions%20are%20supported.
-export const DEEPSEEK_TOOLS_LIMIT = 128;
+// Conservative default cap used when host metadata does not provide an explicit
+// tool-calling limit.
+export const DEFAULT_TOOLS_LIMIT = 128;
 
 export const ACTIVATE_TOOL_PREFIX = 'activate_';
 export const PREFLIGHT_ACTIVATE_CALL_ID_PREFIX = 'responses_preflight_activate_';

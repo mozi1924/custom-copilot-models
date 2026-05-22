@@ -8,8 +8,6 @@ import { REPLAY_MARKER_MIME, parseFirstReplayMarker } from '../replay';
 import type { ConversationSegment } from '../segment';
 import { ACTIVATE_TOOL_PREFIX } from '../tools/consts';
 import type { ActivatePreflightInspection } from '../tools/preflight';
-import { IMAGE_DESCRIPTION_UNAVAILABLE } from '../vision/consts';
-import type { VisionResolutionStats as VisionPipelineStats } from '../vision/index';
 import {
 	classifyDeepSeekRequest,
 	formatModelFields,
@@ -21,6 +19,7 @@ const LARGE_MESSAGE_CHARS = 10_000;
 const HASH_WINDOW_CHARS = 2_048;
 const HOST_CACHE_CONTROL_MIME = 'cache_control';
 const SYSTEM_PROMPT_SECTION_MAX_LINES = 40;
+const IMAGE_DESCRIPTION_UNAVAILABLE = '[Image Description unavailable]';
 const SAFE_SYSTEM_PROMPT_TAGS = new Set([
 	'agents',
 	'attachments',
@@ -173,8 +172,6 @@ export interface BeginCacheDiagnosticsOptions {
 	maxTokens: number | undefined;
 	inputMessages: readonly vscode.LanguageModelChatRequestMessage[];
 	resolvedMessages: readonly vscode.LanguageModelChatRequestMessage[];
-	visionModelId?: string;
-	visionStats?: VisionPipelineStats;
 }
 
 export interface CacheDiagnosticsDoneInfo {
@@ -294,7 +291,6 @@ interface VisionMessageStats {
 	failedImageMessages: number;
 	droppedImageParts: number;
 	historyDescriptionMessages: number;
-	visionModelId?: string;
 }
 
 interface HostPromptTrace {
@@ -384,7 +380,6 @@ class DefaultCacheDiagnosticsRecorder implements CacheDiagnosticsRecorder {
 		const visionResolution = summarizeVisionResolution(
 			options.inputMessages,
 			options.resolvedMessages,
-			options.visionModelId,
 		);
 
 		logger.info(
@@ -403,7 +398,7 @@ class DefaultCacheDiagnosticsRecorder implements CacheDiagnosticsRecorder {
 					` thinkingEffort=${options.thinkingEffort}` +
 					` maxTokens=${options.maxTokens ?? 'api-default'}` +
 					` inputMessages=${options.inputMessages.length}` +
-					` deepseekMessages=${options.request.messages.length}`,
+					` requestMessages=${options.request.messages.length}`,
 			),
 		);
 		const hostPromptTrace = summarizeHostPromptTrace(options.inputMessages);
@@ -435,7 +430,7 @@ class DefaultCacheDiagnosticsRecorder implements CacheDiagnosticsRecorder {
 				logger.info(message);
 			}
 		}
-		const visionTrace = formatVisionTrace(visionResolution, options.visionStats);
+		const visionTrace = formatVisionTrace(visionResolution);
 		if (visionTrace) {
 			logger.info(formatRequestLogLine(requestKind, `[cache-trace #${requestId}] ${visionTrace}`));
 		}
@@ -823,7 +818,6 @@ function getCacheHitRate(usage: DeepSeekUsage): string {
 function summarizeVisionResolution(
 	inputMessages: readonly vscode.LanguageModelChatRequestMessage[],
 	resolvedMessages: readonly vscode.LanguageModelChatRequestMessage[],
-	visionModelId: string | undefined,
 ): VisionMessageStats {
 	const stats: VisionMessageStats = {
 		inputImageParts: 0,
@@ -832,7 +826,6 @@ function summarizeVisionResolution(
 		failedImageMessages: 0,
 		droppedImageParts: 0,
 		historyDescriptionMessages: 0,
-		visionModelId,
 	};
 
 	for (const [index, message] of inputMessages.entries()) {
@@ -893,80 +886,23 @@ function getMessageText(message: vscode.LanguageModelChatRequestMessage): string
 	return text;
 }
 
-function formatVisionTrace(
-	stats: VisionMessageStats,
-	pipelineStats: VisionPipelineStats | undefined,
-): string | undefined {
-	if (
-		stats.inputImageParts === 0 &&
-		stats.historyDescriptionMessages === 0 &&
-		!hasVisionPipelineActivity(pipelineStats)
-	) {
+function formatVisionTrace(stats: VisionMessageStats): string | undefined {
+	if (stats.inputImageParts === 0 && stats.historyDescriptionMessages === 0) {
 		return undefined;
 	}
 
 	const note =
 		stats.inputImageParts === 0 && stats.historyDescriptionMessages > 0 ? ' note=history-only' : '';
-	const visionModel = formatVisionModel(stats);
 	const parts = [
 		`vision inputImages=${stats.inputImageParts}`,
 		`inputMessages=${stats.inputImageMessages}`,
 	];
 
-	if (pipelineStats && hasVisionPipelineActivity(pipelineStats)) {
-		parts.push(
-			`current=${pipelineStats.currentImageMessages}`,
-			`generated=${pipelineStats.generatedImageMessages}`,
-			`replayed=${pipelineStats.replayedImageMessages}`,
-			`omitted=${pipelineStats.omittedImageMessages}`,
-			`droppedParts=${pipelineStats.droppedImageParts}`,
-		);
-		appendNumberIfNonZero(parts, 'unavailable', pipelineStats.unavailableImageMessages);
-		appendNumberIfNonZero(parts, 'failed', pipelineStats.failedImageMessages);
-		appendNumberIfNonZero(parts, 'markerChars', pipelineStats.markerVisionTextChars);
-		appendNumberIfNonZero(parts, 'invalidMarkerVision', pipelineStats.invalidMarkerVisionMetadata);
-	} else {
-		appendNumberIfNonZero(parts, 'generated', stats.describedImageMessages);
-		appendNumberIfNonZero(parts, 'failed', stats.failedImageMessages);
-		appendNumberIfNonZero(parts, 'droppedParts', stats.droppedImageParts);
-	}
-
-	parts.push(`model=${visionModel}`);
+	appendNumberIfNonZero(parts, 'generated', stats.describedImageMessages);
+	appendNumberIfNonZero(parts, 'failed', stats.failedImageMessages);
+	appendNumberIfNonZero(parts, 'droppedParts', stats.droppedImageParts);
 	appendNumberIfNonZero(parts, 'historyDescriptions', stats.historyDescriptionMessages);
 	return parts.join(' ') + note;
-}
-
-function hasVisionPipelineActivity(stats: VisionPipelineStats | undefined): boolean {
-	if (!stats) {
-		return false;
-	}
-	return (
-		stats.inputImageParts > 0 ||
-		stats.currentImageMessages > 0 ||
-		stats.generatedImageMessages > 0 ||
-		stats.replayedImageMessages > 0 ||
-		stats.omittedImageMessages > 0 ||
-		stats.unavailableImageMessages > 0 ||
-		stats.failedImageMessages > 0 ||
-		stats.invalidMarkerVisionMetadata > 0
-	);
-}
-
-function formatVisionModel(stats: VisionMessageStats): string {
-	if (stats.visionModelId) {
-		return stats.visionModelId;
-	}
-	if (stats.inputImageParts === 0) {
-		return 'none';
-	}
-	if (
-		stats.droppedImageParts > 0 &&
-		stats.describedImageMessages === 0 &&
-		stats.failedImageMessages === 0
-	) {
-		return 'none';
-	}
-	return 'unknown';
 }
 
 function formatVscodeMessageTrace(
@@ -1381,7 +1317,7 @@ export function getCacheTraceWarnings(snapshot: CacheTraceSnapshot): string[] {
 	}
 	if (snapshot.stats.missingToolReasoningMessages > 0) {
 		warnings.push(
-			`${snapshot.stats.missingToolReasoningMessages} assistant tool-call message(s) are missing marker-replayed reasoning_content; DeepSeek requires this in thinking tool-call histories and cache prefixes may drift.`,
+			`${snapshot.stats.missingToolReasoningMessages} assistant tool-call message(s) are missing marker-replayed reasoning_content; this may reduce cache-prefix stability for reasoning-enabled models.`,
 		);
 	}
 	if (snapshot.stats.missingPostToolCallReasoningMessages > 0) {

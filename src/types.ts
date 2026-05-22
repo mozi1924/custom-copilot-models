@@ -62,6 +62,11 @@ export interface ResponsesInputTextPart {
 	text: string;
 }
 
+export interface ResponsesOutputTextPart {
+	type: 'output_text';
+	text: string;
+}
+
 export interface ResponsesInputImagePart {
 	type: 'input_image';
 	image_url?: string;
@@ -71,8 +76,28 @@ export interface ResponsesInputImagePart {
 
 export interface ResponsesInputMessage {
 	role: 'user' | 'assistant' | 'system';
-	content: Array<ResponsesInputTextPart | ResponsesInputImagePart>;
+	content: Array<ResponsesInputTextPart | ResponsesOutputTextPart | ResponsesInputImagePart>;
 }
+
+export interface ResponsesFunctionCallInputItem {
+	type: 'function_call';
+	id?: string;
+	call_id?: string;
+	name: string;
+	arguments: string;
+}
+
+export interface ResponsesFunctionCallOutputInputItem {
+	type: 'function_call_output';
+	id?: string;
+	call_id: string;
+	output: string;
+}
+
+export type ResponsesInputItem =
+	| ResponsesInputMessage
+	| ResponsesFunctionCallInputItem
+	| ResponsesFunctionCallOutputInputItem;
 
 export interface ResponsesFunctionTool {
 	type: 'function';
@@ -84,7 +109,7 @@ export interface ResponsesFunctionTool {
 
 export interface ResponsesRequest {
 	model: string;
-	input: ResponsesInputMessage[];
+	input: ResponsesInputItem[];
 	stream: boolean;
 	max_output_tokens?: number;
 	tools?: ResponsesFunctionTool[];
@@ -151,4 +176,3 @@ export interface ModelDefinition {
 	};
 	requiresThinkingParam: boolean;
 }
-
