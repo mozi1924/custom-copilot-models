@@ -43,6 +43,7 @@ export interface DeepSeekRequest {
 	model: string;
 	messages: DeepSeekMessage[];
 	stream: boolean;
+	previous_response_id?: string;
 	temperature?: number;
 	top_p?: number;
 	max_tokens?: number;
@@ -111,6 +112,7 @@ export interface ResponsesRequest {
 	model: string;
 	input: ResponsesInputItem[];
 	stream: boolean;
+	previous_response_id?: string;
 	max_output_tokens?: number;
 	tools?: ResponsesFunctionTool[];
 	tool_choice?: 'none' | 'auto' | 'required';
@@ -143,7 +145,15 @@ export interface ResponsesStreamEvent {
 	item_id?: string;
 	output_index?: number;
 	item?: ResponsesFunctionCallItem;
+	error?: {
+		type?: string;
+		code?: string;
+		message?: string;
+		param?: string;
+	};
+	status?: number;
 	response?: {
+		id?: string;
 		usage?: ResponsesUsage | null;
 	};
 }
@@ -154,6 +164,7 @@ export interface StreamCallbacks {
 	onContent: (content: string) => void;
 	onThinking: (text: string) => void;
 	onToolCall: (toolCall: DeepSeekToolCall) => void;
+	onResponseId?: (responseId: string) => void;
 	onError: (error: Error) => void;
 	onDone: () => void;
 	onUsage?: (usage: DeepSeekUsage) => void;

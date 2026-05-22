@@ -14,7 +14,7 @@ import {
 	type RequestKind,
 } from './debug';
 import { getConfiguredThinkingEffort, type ModelConfigurationOptions } from './models';
-import type { ReplayMarkerMetadata } from './replay';
+import { parseFirstReplayMarker, type ReplayMarkerMetadata } from './replay';
 import type { ConversationSegment } from './segment';
 import { collectTrailingToolResultIds, prepareRequestTools } from './tools/request';
 
@@ -62,15 +62,21 @@ export async function prepareChatRequest({
 	const isThinkingModel = modelDef?.capabilities.thinking ?? true;
 	const thinkingEffort = getConfiguredThinkingEffort(options as ModelConfigurationOptions);
 	const maxOutputTokens = getMaxOutputTokens();
-	const converted = convertMessages(messages, isThinkingModel);
-	const tools = prepareRequestTools(modelDef?.capabilities.toolCalling ?? true, options);
+	const previousResponseId = resolvePreviousResponseId(messages, segment);
+	const requestMessages = resolveRequestMessages(messages, segment, previousResponseId);
+	const converted = convertMessages(requestMessages, isThinkingModel);
+	const { tools, toolChoice } = prepareRequestTools(
+		modelDef?.capabilities.toolCalling ?? true,
+		options,
+	);
 
 	const request: ResponsesRequest = {
 		model: modelInfo.id,
 		input: converted.input,
 		stream: true,
+		previous_response_id: previousResponseId,
 		tools,
-		tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
+		tool_choice: toolChoice,
 		max_output_tokens: maxOutputTokens,
 		...(isThinkingModel ? { reasoning: { effort: thinkingEffort } } : {}),
 	};
@@ -80,6 +86,7 @@ export async function prepareChatRequest({
 		model: request.model,
 		messages: converted.debugMessages,
 		stream: true,
+		previous_response_id: request.previous_response_id,
 		tools: tools?.map((tool) => ({
 			type: 'function',
 			function: {
@@ -95,7 +102,7 @@ export async function prepareChatRequest({
 
 	const requestKind = classifyDeepSeekRequest({
 		request: debugRequest,
-		inputMessages: messages,
+		inputMessages: requestMessages,
 	});
 
 	dumpDeepSeekRequest(debugRequest, {
@@ -107,7 +114,7 @@ export async function prepareChatRequest({
 		thinkingEffort,
 		maxTokens: maxOutputTokens,
 		inputMessages: messages,
-		resolvedMessages: messages,
+		resolvedMessages: requestMessages,
 		requestOptions: options,
 	});
 
@@ -120,7 +127,7 @@ export async function prepareChatRequest({
 		thinkingEffort,
 		maxTokens: maxOutputTokens,
 		inputMessages: messages,
-		resolvedMessages: messages,
+		resolvedMessages: requestMessages,
 	});
 
 	return {
@@ -133,7 +140,39 @@ export async function prepareChatRequest({
 		cacheDiagnostics: diagnosticsRun,
 		requestKind,
 		segment,
-		replayMarkerMetadata: {},
+		replayMarkerMetadata: previousResponseId ? { responseId: previousResponseId } : {},
 		streamingTransportMode: getStreamingTransportMode(),
 	};
+}
+
+function resolvePreviousResponseId(
+	messages: readonly vscode.LanguageModelChatRequestMessage[],
+	segment: ConversationSegment,
+): string | undefined {
+	if (segment.reason !== 'markerFound' || segment.markerMessageIndex === undefined) {
+		return undefined;
+	}
+
+	const markerMessage = messages[segment.markerMessageIndex];
+	if (!markerMessage) {
+		return undefined;
+	}
+	const marker = parseFirstReplayMarker(markerMessage);
+	if (!marker?.valid || !marker.responseId) {
+		return undefined;
+	}
+	return marker.responseId;
+}
+
+function resolveRequestMessages(
+	messages: readonly vscode.LanguageModelChatRequestMessage[],
+	segment: ConversationSegment,
+	previousResponseId: string | undefined,
+): readonly vscode.LanguageModelChatRequestMessage[] {
+	if (!previousResponseId || segment.markerMessageIndex === undefined) {
+		return messages;
+	}
+
+	const deltaMessages = messages.slice(segment.markerMessageIndex + 1);
+	return deltaMessages.length > 0 ? deltaMessages : messages;
 }

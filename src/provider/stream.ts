@@ -17,6 +17,7 @@ import {
 interface ResponseStreamState {
 	accumulatedReasoning: string;
 	emittedToolCallIds: string[];
+	responseId?: string;
 	initialResponseNoticeReported: boolean;
 	replayMarkerReported: boolean;
 }
@@ -43,6 +44,7 @@ export function streamChatCompletion({
 	const state: ResponseStreamState = {
 		accumulatedReasoning: '',
 		emittedToolCallIds: [],
+		responseId: undefined,
 		initialResponseNoticeReported: false,
 		replayMarkerReported: false,
 	};
@@ -62,6 +64,10 @@ export function streamChatCompletion({
 		onToolCall: (toolCall: DeepSeekToolCall) => {
 			reportInitialResponseNoticeOnce(progress, state, initialResponseNotice);
 			handleToolCall(toolCall, state, progress);
+		},
+
+		onResponseId: (responseId: string) => {
+			state.responseId = responseId;
 		},
 
 		onError: (error: Error) => {
@@ -242,6 +248,7 @@ function getReplayMarkerMetadata(
 	return {
 		...prepared.replayMarkerMetadata,
 		reasoningText: state.accumulatedReasoning || undefined,
+		responseId: state.responseId ?? prepared.replayMarkerMetadata.responseId,
 	};
 }
 

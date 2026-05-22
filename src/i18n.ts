@@ -50,6 +50,8 @@ const zh: Translations = {
 	// Request
 	'request.toolsLimitExceeded':
 		'当前请求包含 {1} 个函数工具，超过上限 {0}。请先在 VS Code 的 Configure Tools 里关闭不常用工具。',
+	'request.requiredToolModeNeedsTools':
+		'当前请求要求模型必须调用工具（Required），但未附带任何可用工具。请先在 Configure Tools 中启用至少一个工具。',
 	'request.preflightRoundLimitExceeded':
 		'实验性稳定工具列表设置已尝试 {0} 轮，仍无法得到稳定的已启用工具列表。请关闭该实验性设置，或先用 VS Code 的 Configure Tools 关闭不常用的工具。',
 	'notice.toolDrift':
@@ -99,6 +101,8 @@ const en: Translations = {
 	// Request
 	'request.toolsLimitExceeded':
 		'The request contains {1} tools but limit is {0}. Use VS Code Configure Tools to disable tools you rarely use.',
+	'request.requiredToolModeNeedsTools':
+		'This request requires tool use (Required), but no tools were provided. Enable at least one tool in Configure Tools.',
 	'request.preflightRoundLimitExceeded':
 		'Experimental tool-list stabilization tried {0} rounds but still could not get a stable enabled-tools list. Turn this experimental setting off, or use VS Code Configure Tools to disable tools you rarely use first.',
 	'notice.toolDrift':

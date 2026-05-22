@@ -14,6 +14,7 @@ import type {
 	ReplayMarkerMetadata,
 	ReplayMarkerParseResult,
 	ReplayMarkerPayloadFormat,
+	ResponseMarkerIdIgnoredReason,
 	VisionMarkerTextIgnoredReason,
 } from './types';
 
@@ -35,6 +36,22 @@ export function parseFirstReplayMarker(
 	return findFirstReplayMarker(message)?.marker;
 }
 
+export function findLatestReplayResponseId(
+	messages: readonly vscode.LanguageModelChatRequestMessage[],
+): string | undefined {
+	for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+		const message = messages[messageIndex];
+		if (message.role !== vscode.LanguageModelChatMessageRole.Assistant) {
+			continue;
+		}
+		const marker = parseFirstReplayMarker(message);
+		if (marker?.valid && marker.responseId) {
+			return marker.responseId;
+		}
+	}
+	return undefined;
+}
+
 function parseReplayMarkerPart(part: unknown): ReplayMarkerParseResult | undefined {
 	if (!(part instanceof vscode.LanguageModelDataPart)) {
 		return undefined;
@@ -46,7 +63,7 @@ function parseReplayMarkerPart(part: unknown): ReplayMarkerParseResult | undefin
 }
 
 export function hasReplayMarkerMetadata(metadata: ReplayMarkerMetadata): boolean {
-	return Boolean(metadata.visionText || metadata.reasoningText);
+	return Boolean(metadata.visionText || metadata.reasoningText || metadata.responseId);
 }
 
 export function createReplayMarkerPart(
@@ -55,6 +72,7 @@ export function createReplayMarkerPart(
 	const payload = encodeReplayMarkerJson({
 		...createVisionMarkerPayload(metadata.visionText),
 		...createReasoningMarkerPayload(metadata.reasoningText),
+		...createResponseMarkerPayload(metadata.responseId),
 	});
 	return new vscode.LanguageModelDataPart(
 		new TextEncoder().encode(`${REPLAY_MARKER_WRITER_ID}\\${payload}`),
@@ -103,12 +121,19 @@ export function parseReplayMarkerData(data: Uint8Array): ReplayMarkerParseResult
 
 		const vision = parseVisionMarkerMetadata(value);
 		const reasoning = parseReasoningMarkerMetadata(value);
+		const response = parseResponseMarkerMetadata(value);
 		return {
 			valid: true,
 			segmentId: segmentId.value,
 			...vision,
 			...reasoning,
-			legacySegmentOnly: Boolean(segmentId.value && !vision.visionText && !reasoning.reasoningText),
+			...response,
+			legacySegmentOnly: Boolean(
+				segmentId.value &&
+					!vision.visionText &&
+					!reasoning.reasoningText &&
+					!response.responseId,
+			),
 			payloadFormat: decodedPayload.format,
 		};
 	} catch {
@@ -185,6 +210,33 @@ function parseReasoningMarkerMetadata(value: object): {
 	}
 
 	return { reasoningText: text };
+}
+
+function createResponseMarkerPayload(responseId: string | undefined): object {
+	return responseId ? { response: { id: responseId } } : {};
+}
+
+function parseResponseMarkerMetadata(value: object): {
+	responseId?: string;
+	responseIdIgnoredReason?: ResponseMarkerIdIgnoredReason;
+} {
+	const response = (value as { response?: unknown }).response;
+	if (response === undefined) {
+		return {};
+	}
+	if (!response || typeof response !== 'object' || Array.isArray(response)) {
+		return { responseIdIgnoredReason: 'response-not-object' };
+	}
+
+	const id = (response as { id?: unknown }).id;
+	if (typeof id !== 'string') {
+		return { responseIdIgnoredReason: 'response-id-not-string' };
+	}
+	if (id.length === 0) {
+		return { responseIdIgnoredReason: 'response-id-empty' };
+	}
+
+	return { responseId: id };
 }
 
 function encodeReplayMarkerJson(value: object): string {

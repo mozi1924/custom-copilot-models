@@ -1,10 +1,12 @@
 export interface ReplayMarkerParseResult {
 	valid: boolean;
 	segmentId?: string;
+	responseId?: string;
 	visionText?: string;
 	visionTextIgnoredReason?: VisionMarkerTextIgnoredReason;
 	reasoningText?: string;
 	reasoningTextIgnoredReason?: ReasoningMarkerTextIgnoredReason;
+	responseIdIgnoredReason?: ResponseMarkerIdIgnoredReason;
 	legacySegmentOnly?: boolean;
 	payloadFormat?: ReplayMarkerPayloadFormat;
 	error?: string;
@@ -27,7 +29,13 @@ export type ReasoningMarkerTextIgnoredReason =
 	| 'reasoning-text-not-string'
 	| 'reasoning-text-empty';
 
+export type ResponseMarkerIdIgnoredReason =
+	| 'response-not-object'
+	| 'response-id-not-string'
+	| 'response-id-empty';
+
 export interface ReplayMarkerMetadata {
 	visionText?: string;
 	reasoningText?: string;
+	responseId?: string;
 }

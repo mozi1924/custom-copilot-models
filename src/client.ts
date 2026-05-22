@@ -221,8 +221,8 @@ export class ResponsesClient {
 						return;
 					}
 
-					this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
-					if (event.type === 'response.completed') {
+						this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
+						if (event.type === 'response.completed') {
 						flushPendingToolCalls(
 							pendingToolCalls,
 							emittedToolCallItemIds,
@@ -274,6 +274,13 @@ export class ResponsesClient {
 		callbacks: StreamCallbacks,
 	): void {
 		switch (event.type) {
+			case 'response.created': {
+				const responseId = event.response?.id;
+				if (responseId && callbacks.onResponseId) {
+					callbacks.onResponseId(responseId);
+				}
+				break;
+			}
 			case 'response.output_text.delta': {
 				if (event.delta) {
 					callbacks.onContent(event.delta);
@@ -334,6 +341,10 @@ export class ResponsesClient {
 				break;
 			}
 			case 'response.completed': {
+				const responseId = event.response?.id;
+				if (responseId && callbacks.onResponseId) {
+					callbacks.onResponseId(responseId);
+				}
 				const usage = event.response?.usage;
 				if (usage && callbacks.onUsage) {
 					callbacks.onUsage(mapResponsesUsage(usage));
@@ -467,16 +478,9 @@ function bufferToString(value: Buffer | Uint8Array): string {
 }
 
 function formatWebSocketEventError(event: ResponsesStreamEvent): string {
-	const payload = event as {
-		error?: {
-			code?: string;
-			message?: string;
-		};
-		status?: number;
-	};
-	const code = payload.error?.code;
-	const message = payload.error?.message ?? 'Unknown WebSocket error event';
-	const status = payload.status ? ` status=${payload.status}` : '';
+	const code = event.error?.code;
+	const message = event.error?.message ?? 'Unknown WebSocket error event';
+	const status = event.status ? ` status=${event.status}` : '';
 	return `Responses WebSocket event error:${status}${code ? ` code=${code}` : ''} message=${message}`;
 }
 
