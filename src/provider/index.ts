@@ -1,6 +1,7 @@
 import vscode from 'vscode';
 import { AuthManager } from '../auth';
 import { getStabilizeToolListEnabled } from '../config';
+import { CONFIG_SECTION } from '../consts';
 import { t } from '../i18n';
 import { logger } from '../logger';
 import {
@@ -40,6 +41,16 @@ export class ResponsesChatProvider implements vscode.LanguageModelChatProvider {
 			this.onDidChangeLanguageModelChatInformationEmitter,
 			vscode.workspace.onDidChangeConfiguration((e) => {
 				if (e.affectsConfiguration('responses-copilot.apiKey')) {
+					this.onDidChangeLanguageModelChatInformationEmitter.fire();
+				}
+				if (
+					e.affectsConfiguration(`${CONFIG_SECTION}.baseUrl`) ||
+					e.affectsConfiguration(`${CONFIG_SECTION}.modelListTtlMinutes`) ||
+					e.affectsConfiguration(`${CONFIG_SECTION}.modelMaxInputTokensDefault`) ||
+					e.affectsConfiguration(`${CONFIG_SECTION}.modelMaxOutputTokensDefault`) ||
+					e.affectsConfiguration(`${CONFIG_SECTION}.modelTokenOverrides`)
+				) {
+					this.modelRegistry.invalidate();
 					this.onDidChangeLanguageModelChatInformationEmitter.fire();
 				}
 			}),

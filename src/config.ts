@@ -3,6 +3,10 @@ import { CONFIG_SECTION } from './consts';
 
 export type DebugMode = 'minimal' | 'metadata' | 'verbose';
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export interface ModelTokenOverride {
+	maxInputTokens?: number;
+	maxOutputTokens?: number;
+}
 
 /**
  * Get Responses API base URL from settings.
@@ -28,6 +32,48 @@ export function getModelListTtlMinutes(): number {
 	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 	const value = config.get<number>('modelListTtlMinutes', 30);
 	return Number.isFinite(value) && value > 0 ? value : 30;
+}
+
+export function getModelMaxInputTokensDefault(): number {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	const value = config.get<number>('modelMaxInputTokensDefault', 256_000);
+	return toPositiveInteger(value, 256_000) ?? 256_000;
+}
+
+export function getModelMaxOutputTokensDefault(): number {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	const value = config.get<number>('modelMaxOutputTokensDefault', 128_000);
+	return toPositiveInteger(value, 128_000) ?? 128_000;
+}
+
+export function getModelTokenOverrides(): Record<string, ModelTokenOverride> {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	const raw = config.get<unknown>('modelTokenOverrides', {});
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		return {};
+	}
+
+	const overrides: Record<string, ModelTokenOverride> = {};
+	for (const [modelId, value] of Object.entries(raw as Record<string, unknown>)) {
+		if (!modelId || typeof modelId !== 'string') {
+			continue;
+		}
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			continue;
+		}
+
+		const record = value as Record<string, unknown>;
+		const maxInputTokens = toPositiveInteger(record.maxInputTokens, undefined);
+		const maxOutputTokens = toPositiveInteger(record.maxOutputTokens, undefined);
+		if (maxInputTokens === undefined && maxOutputTokens === undefined) {
+			continue;
+		}
+		overrides[modelId] = {
+			maxInputTokens,
+			maxOutputTokens,
+		};
+	}
+	return overrides;
 }
 
 export function getReasoningEffortDefault(): ReasoningEffort {
@@ -98,6 +144,13 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort | undefined {
 
 function stripTrailingSlash(url: string): string {
 	return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+function toPositiveInteger(value: unknown, fallback: number | undefined): number | undefined {
+	if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+		return Math.floor(value);
+	}
+	return fallback;
 }
 
 function getConfiguredDebugMode(config: vscode.WorkspaceConfiguration): DebugMode | undefined {

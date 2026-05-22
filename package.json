@@ -125,6 +125,23 @@
           "minimum": 0,
           "description": "%responses-copilot.config.maxOutputTokens.description%"
         },
+        "responses-copilot.modelMaxInputTokensDefault": {
+          "type": "number",
+          "default": 256000,
+          "minimum": 1,
+          "description": "%responses-copilot.config.modelMaxInputTokensDefault.description%"
+        },
+        "responses-copilot.modelMaxOutputTokensDefault": {
+          "type": "number",
+          "default": 128000,
+          "minimum": 1,
+          "description": "%responses-copilot.config.modelMaxOutputTokensDefault.description%"
+        },
+        "responses-copilot.modelTokenOverrides": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "%responses-copilot.config.modelTokenOverrides.description%"
+        },
         "responses-copilot.modelListTtlMinutes": {
           "type": "number",
           "default": 30,

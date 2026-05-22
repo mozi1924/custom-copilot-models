@@ -36,8 +36,8 @@ export const FALLBACK_MODELS: ModelDefinition[] = [
 		family: 'gpt',
 		version: '5.4',
 		detail: 'General-purpose fallback model',
-		maxInputTokens: 1_000_000,
-		maxOutputTokens: 393_216,
+		maxInputTokens: 256_000,
+		maxOutputTokens: 128_000,
 		capabilities: {
 			toolCalling: true,
 			imageInput: true,

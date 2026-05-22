@@ -1,5 +1,11 @@
 import type { LanguageModelChatInformation } from 'vscode';
-import { getBaseUrl, getModelListTtlMinutes } from '../config';
+import {
+	getBaseUrl,
+	getModelListTtlMinutes,
+	getModelMaxInputTokensDefault,
+	getModelMaxOutputTokensDefault,
+	getModelTokenOverrides,
+} from '../config';
 import { FALLBACK_MODELS } from '../consts';
 import { logger } from '../logger';
 import type { ModelDefinition } from '../types';
@@ -21,6 +27,12 @@ const EXCLUDED_MODEL_PATTERNS = [
 	/realtime/i,
 	/audio/i,
 ];
+
+interface ModelTokenSettings {
+	defaultMaxInputTokens: number;
+	defaultMaxOutputTokens: number;
+	overrides: ReturnType<typeof getModelTokenOverrides>;
+}
 
 export class ModelRegistry {
 	private cache:
@@ -49,7 +61,17 @@ export class ModelRegistry {
 			logger.warn('Failed to fetch remote model list; falling back to static models', error);
 		}
 
-		const fallback = [...FALLBACK_MODELS];
+		const tokenSettings = getCurrentModelTokenSettings();
+		const fallback = FALLBACK_MODELS.map((model) =>
+			applyModelTokenSettings(
+				{
+					...model,
+					maxInputTokens: tokenSettings.defaultMaxInputTokens,
+					maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
+				},
+				tokenSettings,
+			),
+		);
 		this.cache = {
 			models: fallback,
 			expiresAt: now + getModelListTtlMinutes() * 60_000,
@@ -62,6 +84,7 @@ export class ModelRegistry {
 	}
 
 	private async fetchModels(apiKey: string | undefined): Promise<ModelDefinition[]> {
+		const tokenSettings = getCurrentModelTokenSettings();
 		const response = await fetch(`${getBaseUrl()}/models`, {
 			method: 'GET',
 			headers: {
@@ -76,27 +99,30 @@ export class ModelRegistry {
 		const payload = (await response.json()) as ModelsApiResponse;
 		const ids = (payload.data ?? []).map((model) => model.id).filter(isLikelyChatModelId);
 
-		return ids.map((id) => toModelDefinition(id));
+		return ids.map((id) => toModelDefinition(id, tokenSettings));
 	}
 }
 
-export function toModelDefinition(id: string): ModelDefinition {
+export function toModelDefinition(
+	id: string,
+	tokenSettings = getCurrentModelTokenSettings(),
+): ModelDefinition {
 	const family = resolveFamily(id);
-	return {
+	return applyModelTokenSettings({
 		id,
 		name: id,
 		family,
 		version: resolveVersion(id),
 		detail: 'Responses API model',
-		maxInputTokens: 1_000_000,
-		maxOutputTokens: 393_216,
+		maxInputTokens: tokenSettings.defaultMaxInputTokens,
+		maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
 		capabilities: {
 			toolCalling: true,
 			imageInput: true,
 			thinking: true,
 		},
 		requiresThinkingParam: false,
-	};
+	}, tokenSettings);
 }
 
 export function isLikelyChatModelId(modelId: string): boolean {
@@ -137,4 +163,24 @@ function resolveFamily(modelId: string): string {
 function resolveVersion(modelId: string): string {
 	const match = modelId.match(/\d+(\.\d+)?/);
 	return match?.[0] ?? '1';
+}
+
+function getCurrentModelTokenSettings(): ModelTokenSettings {
+	return {
+		defaultMaxInputTokens: getModelMaxInputTokensDefault(),
+		defaultMaxOutputTokens: getModelMaxOutputTokensDefault(),
+		overrides: getModelTokenOverrides(),
+	};
+}
+
+function applyModelTokenSettings(
+	model: ModelDefinition,
+	tokenSettings: ModelTokenSettings,
+): ModelDefinition {
+	const override = tokenSettings.overrides[model.id];
+	return {
+		...model,
+		maxInputTokens: override?.maxInputTokens ?? model.maxInputTokens,
+		maxOutputTokens: override?.maxOutputTokens ?? model.maxOutputTokens,
+	};
 }
