@@ -51,6 +51,8 @@ This project is a Copilot API refactor derived from the upstream extension:
 
 Specifically, this codebase evolved from **DeepSeek V4 for Copilot Chat** by reverse-engineering/adapting Copilot-side integration behaviors and migrating the transport/protocol to generic Responses API semantics.
 
+<!-- marketplace-readme:remove-start -->
+
 ## Development
 
 ```bash
@@ -62,3 +64,5 @@ npm run lint
 ## License
 
 [MIT](LICENSE)
+
+<!-- marketplace-readme:remove-end -->
