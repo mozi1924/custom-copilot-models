@@ -1,10 +1,11 @@
 import type { LanguageModelChatInformation } from 'vscode';
 import {
-    getBaseUrl,
-    getModelListTtlMinutes,
-    getModelMaxInputTokensDefault,
-    getModelMaxOutputTokensDefault,
-    getModelTokenOverrides,
+	getBaseUrl,
+	getForceOverrideModelTokenSettings,
+	getModelListTtlMinutes,
+	getModelMaxInputTokensDefault,
+	getModelMaxOutputTokensDefault,
+	getModelTokenOverrides,
 } from '../config';
 import { FALLBACK_MODELS } from '../consts';
 import { logger } from '../logger';
@@ -31,8 +32,31 @@ const EXCLUDED_MODEL_PATTERNS = [
 interface ModelTokenSettings {
 	defaultMaxInputTokens: number;
 	defaultMaxOutputTokens: number;
+	forceOverrideModelTokenSettings: boolean;
 	overrides: ReturnType<typeof getModelTokenOverrides>;
 }
+
+interface ModelTokenPreset {
+	maxInputTokens: number;
+	maxOutputTokens: number;
+}
+
+const BUILTIN_MODEL_TOKEN_PRESETS: Array<{ pattern: RegExp; preset: ModelTokenPreset }> = [
+	{
+		pattern: /^gpt-5/i,
+		preset: {
+			maxInputTokens: 272_000,
+			maxOutputTokens: 128_000,
+		},
+	},
+	{
+		pattern: /^deepseek-v4-/i,
+		preset: {
+			maxInputTokens: 1_000_000,
+			maxOutputTokens: 384_000,
+		},
+	},
+];
 
 export class ModelListRequestError extends Error {
 	readonly status: number;
@@ -196,6 +220,7 @@ function getCurrentModelTokenSettings(): ModelTokenSettings {
 	return {
 		defaultMaxInputTokens: getModelMaxInputTokensDefault(),
 		defaultMaxOutputTokens: getModelMaxOutputTokensDefault(),
+		forceOverrideModelTokenSettings: getForceOverrideModelTokenSettings(),
 		overrides: getModelTokenOverrides(),
 	};
 }
@@ -205,9 +230,43 @@ function applyModelTokenSettings(
 	tokenSettings: ModelTokenSettings,
 ): ModelDefinition {
 	const override = tokenSettings.overrides[model.id];
+	if (override) {
+		return {
+			...model,
+			maxInputTokens: override.maxInputTokens ?? model.maxInputTokens,
+			maxOutputTokens: override.maxOutputTokens ?? model.maxOutputTokens,
+		};
+	}
+
+	if (tokenSettings.forceOverrideModelTokenSettings) {
+		return {
+			...model,
+			maxInputTokens: tokenSettings.defaultMaxInputTokens,
+			maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
+		};
+	}
+
+	const preset = getBuiltinModelTokenPreset(model.id);
+	if (preset) {
+		return {
+			...model,
+			maxInputTokens: preset.maxInputTokens,
+			maxOutputTokens: preset.maxOutputTokens,
+		};
+	}
+
 	return {
 		...model,
-		maxInputTokens: override?.maxInputTokens ?? model.maxInputTokens,
-		maxOutputTokens: override?.maxOutputTokens ?? model.maxOutputTokens,
+		maxInputTokens: model.maxInputTokens,
+		maxOutputTokens: model.maxOutputTokens,
 	};
+}
+
+function getBuiltinModelTokenPreset(modelId: string): ModelTokenPreset | undefined {
+	for (const entry of BUILTIN_MODEL_TOKEN_PRESETS) {
+		if (entry.pattern.test(modelId)) {
+			return entry.preset;
+		}
+	}
+	return undefined;
 }

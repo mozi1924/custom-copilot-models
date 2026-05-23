@@ -23,11 +23,27 @@
 |---|---|---|
 | `responses-copilot.baseUrl` | `https://api.openai.com/v1` | Upstream API base URL |
 | `responses-copilot.maxOutputTokens` | `0` | Max output tokens (`0` = unlimited / omit field) |
+| `responses-copilot.modelMaxInputTokensDefault` | `272000` | Global fallback max input tokens for models without built-in or per-model overrides |
+| `responses-copilot.modelMaxOutputTokensDefault` | `128000` | Global fallback max output tokens for models without built-in or per-model overrides |
+| `responses-copilot.modelTokenOverrides` | `{}` | Per-model token overrides (highest priority) |
+| `responses-copilot.forceOverrideModelTokenSettings` | `false` | Force global token defaults for all models (except explicit per-model overrides) |
 | `responses-copilot.modelListTtlMinutes` | `30` | `/models` cache TTL |
 | `responses-copilot.reasoningEffortDefault` | `medium` | Default reasoning effort (`none/minimal/low/medium/high/xhigh`) |
 | `responses-copilot.streamingTransport` | `websocketPreferred` | Streaming transport (`websocketPreferred` -> `httpOnly` fallback, `httpOnly`, `websocketOnly`) |
 | `responses-copilot.experimental.stabilizeToolList` | `false` | Pre-activate host `activate_*` virtual tools to stabilize tool list across turns |
 | `responses-copilot.debugMode` | `minimal` | `minimal`, `metadata`, `verbose` |
+
+Built-in token presets (auto-detected by model id):
+
+- `gpt-5*`: input `272000`, output `128000`
+- `deepseek-v4-*`: input `1000000`, output `384000`
+
+Token setting precedence:
+
+1. `responses-copilot.modelTokenOverrides` (per-model)
+2. `responses-copilot.forceOverrideModelTokenSettings=true` -> use global defaults for all models
+3. built-in presets by model id
+4. global defaults (`modelMaxInputTokensDefault` / `modelMaxOutputTokensDefault`)
 
 ## Commands
 

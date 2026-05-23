@@ -143,6 +143,11 @@
           "default": {},
           "markdownDescription": "%responses-copilot.config.modelTokenOverrides.description%"
         },
+        "responses-copilot.forceOverrideModelTokenSettings": {
+          "type": "boolean",
+          "default": false,
+          "description": "%responses-copilot.config.forceOverrideModelTokenSettings.description%"
+        },
         "responses-copilot.modelListTtlMinutes": {
           "type": "number",
           "default": 30,

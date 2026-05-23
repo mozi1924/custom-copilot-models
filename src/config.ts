@@ -37,8 +37,8 @@ export function getModelListTtlMinutes(): number {
 
 export function getModelMaxInputTokensDefault(): number {
 	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-	const value = config.get<number>('modelMaxInputTokensDefault', 256_000);
-	return toPositiveInteger(value, 256_000) ?? 256_000;
+	const value = config.get<number>('modelMaxInputTokensDefault', 272_000);
+	return toPositiveInteger(value, 272_000) ?? 272_000;
 }
 
 export function getModelMaxOutputTokensDefault(): number {
@@ -75,6 +75,11 @@ export function getModelTokenOverrides(): Record<string, ModelTokenOverride> {
 		};
 	}
 	return overrides;
+}
+
+export function getForceOverrideModelTokenSettings(): boolean {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	return config.get<boolean>('forceOverrideModelTokenSettings', false);
 }
 
 export function getReasoningEffortDefault(): ReasoningEffort {
