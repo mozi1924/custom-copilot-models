@@ -148,6 +148,11 @@
           "default": false,
           "description": "%responses-copilot.config.forceOverrideModelTokenSettings.description%"
         },
+        "responses-copilot.omitMaxOutputTokensInModelMetadata": {
+          "type": "boolean",
+          "default": true,
+          "description": "%responses-copilot.config.omitMaxOutputTokensInModelMetadata.description%"
+        },
         "responses-copilot.modelListTtlMinutes": {
           "type": "number",
           "default": 30,

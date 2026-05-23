@@ -1,5 +1,8 @@
 import vscode from 'vscode';
-import { getReasoningEffortDefault } from '../config';
+import {
+	getOmitMaxOutputTokensInModelMetadata,
+	getReasoningEffortDefault,
+} from '../config';
 import { t } from '../i18n';
 import type { ModelDefinition } from '../types';
 
@@ -30,7 +33,8 @@ export type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
 
 export function toChatInfo(m: ModelDefinition, hasApiKey: boolean): ModelPickerChatInformation {
 	const modelDetail = m.detail;
-	return {
+	const omitMaxOutputTokens = getOmitMaxOutputTokensInModelMetadata();
+	const chatInfo: ModelPickerChatInformation = {
 		id: m.id,
 		name: m.name,
 		family: m.family,
@@ -47,6 +51,12 @@ export function toChatInfo(m: ModelDefinition, hasApiKey: boolean): ModelPickerC
 		},
 		...(m.capabilities.thinking ? { configurationSchema: buildThinkingEffortSchema() } : {}),
 	};
+
+	if (omitMaxOutputTokens) {
+		delete (chatInfo as { maxOutputTokens?: number }).maxOutputTokens;
+	}
+
+	return chatInfo;
 }
 
 export function getConfiguredThinkingEffort(options: ModelConfigurationOptions): ThinkingEffort {

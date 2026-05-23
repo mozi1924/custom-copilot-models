@@ -5,9 +5,9 @@ import { CONFIG_SECTION } from '../consts';
 import { t } from '../i18n';
 import { logger } from '../logger';
 import {
-    classifyProviderRequest,
-    createCacheDiagnosticsRecorder,
-    dumpProviderInput,
+	classifyProviderRequest,
+	createCacheDiagnosticsRecorder,
+	dumpProviderInput,
 } from './debug';
 import { ModelListRequestError, ModelRegistry } from './modelRegistry';
 import { toChatInfo } from './models';
@@ -48,7 +48,8 @@ export class ResponsesChatProvider implements vscode.LanguageModelChatProvider {
 					e.affectsConfiguration(`${CONFIG_SECTION}.modelListTtlMinutes`) ||
 					e.affectsConfiguration(`${CONFIG_SECTION}.modelMaxInputTokensDefault`) ||
 					e.affectsConfiguration(`${CONFIG_SECTION}.modelMaxOutputTokensDefault`) ||
-					e.affectsConfiguration(`${CONFIG_SECTION}.modelTokenOverrides`)
+					e.affectsConfiguration(`${CONFIG_SECTION}.modelTokenOverrides`) ||
+					e.affectsConfiguration(`${CONFIG_SECTION}.omitMaxOutputTokensInModelMetadata`)
 				) {
 					this.modelRegistry.invalidate();
 					this.onDidChangeLanguageModelChatInformationEmitter.fire();

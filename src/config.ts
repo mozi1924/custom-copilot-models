@@ -57,6 +57,11 @@ export function getModelMaxOutputTokensDefault(): number {
 	return toPositiveInteger(value, 128_000) ?? 128_000;
 }
 
+export function getOmitMaxOutputTokensInModelMetadata(): boolean {
+	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+	return config.get<boolean>('omitMaxOutputTokensInModelMetadata', true);
+}
+
 export function getModelTokenOverrides(): ModelTokenOverrideSettings {
 	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 	const raw = config.get<unknown>('modelTokenOverrides', {});
