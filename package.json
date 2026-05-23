@@ -128,7 +128,7 @@
         },
         "responses-copilot.modelMaxInputTokensDefault": {
           "type": "number",
-          "default": 256000,
+          "default": 272000,
           "minimum": 1,
           "description": "%responses-copilot.config.modelMaxInputTokensDefault.description%"
         },
