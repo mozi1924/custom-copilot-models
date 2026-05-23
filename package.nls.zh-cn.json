@@ -19,7 +19,7 @@
   "responses-copilot.config.maxOutputTokens.description": "每次请求的最大输出 Token 数，设为 0 则不限制。",
   "responses-copilot.config.modelMaxInputTokensDefault.description": "远端模型在 Copilot 模型元数据中显示的默认最大输入 Token。上游未提供限制时使用。",
   "responses-copilot.config.modelMaxOutputTokensDefault.description": "远端模型在 Copilot 模型元数据中显示的默认最大输出 Token。上游未提供限制时使用。",
-  "responses-copilot.config.modelTokenOverrides.description": "按模型覆盖 Token 上限。该项优先级最高，会覆盖内置模型识别与全局默认值。\n\n示例：\n```json\n{\n  \"gpt-5\": { \"maxInputTokens\": 272000, \"maxOutputTokens\": 128000 },\n  \"deepseek-v4-0324\": { \"maxInputTokens\": 1000000, \"maxOutputTokens\": 384000 }\n}\n```",
+  "responses-copilot.config.modelTokenOverrides.description": "按模型覆盖 Token 上限。支持完整模型 id 键，也支持以 `*` 结尾的前缀匹配键。该项优先级最高，会覆盖内置模型识别与全局默认值。\n\n示例：\n```json\n{\n  \"gpt-5\": { \"maxInputTokens\": 272000, \"maxOutputTokens\": 128000 },\n  \"gpt-5-mini*\": { \"maxOutputTokens\": 64000 },\n  \"deepseek-v4-*\": { \"maxInputTokens\": 1000000, \"maxOutputTokens\": 384000 }\n}\n```",
   "responses-copilot.config.forceOverrideModelTokenSettings.description": "强制对所有模型使用全局 Token 参数。启用后，所有模型都使用 `modelMaxInputTokensDefault` 与 `modelMaxOutputTokensDefault`，除非该模型在 `modelTokenOverrides` 中单独配置。",
   "responses-copilot.config.modelListTtlMinutes.description": "上游 /models 列表缓存时长（分钟）。",
   "responses-copilot.config.reasoningEffortDefault.description": "未在模型选择器覆盖时使用的默认推理档位。",

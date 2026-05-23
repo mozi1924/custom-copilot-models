@@ -38,6 +38,21 @@ Built-in token presets (auto-detected by model id):
 - `gpt-5*`: input `272000`, output `128000`
 - `deepseek-v4-*`: input `1000000`, output `384000`
 
+`responses-copilot.modelTokenOverrides` supports:
+
+- exact model id key (for example `gpt-5`)
+- prefix wildcard key ending with `*` (for example `gpt-5-mini*`, `deepseek-v4-*`)
+
+Example:
+
+```json
+{
+	"gpt-5": { "maxInputTokens": 272000, "maxOutputTokens": 128000 },
+	"gpt-5-mini*": { "maxOutputTokens": 64000 },
+	"deepseek-v4-*": { "maxInputTokens": 1000000, "maxOutputTokens": 384000 }
+}
+```
+
 Token setting precedence:
 
 1. `responses-copilot.modelTokenOverrides` (per-model)

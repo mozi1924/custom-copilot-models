@@ -9,6 +9,16 @@ export interface ModelTokenOverride {
 	maxOutputTokens?: number;
 }
 
+export interface ModelTokenPrefixOverride {
+	prefix: string;
+	override: ModelTokenOverride;
+}
+
+export interface ModelTokenOverrideSettings {
+	exact: Record<string, ModelTokenOverride>;
+	prefix: ModelTokenPrefixOverride[];
+}
+
 /**
  * Get Responses API base URL from settings.
  * Falls back to official OpenAI v1 endpoint when not configured.
@@ -47,14 +57,18 @@ export function getModelMaxOutputTokensDefault(): number {
 	return toPositiveInteger(value, 128_000) ?? 128_000;
 }
 
-export function getModelTokenOverrides(): Record<string, ModelTokenOverride> {
+export function getModelTokenOverrides(): ModelTokenOverrideSettings {
 	const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 	const raw = config.get<unknown>('modelTokenOverrides', {});
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-		return {};
+		return {
+			exact: {},
+			prefix: [],
+		};
 	}
 
-	const overrides: Record<string, ModelTokenOverride> = {};
+	const exact: Record<string, ModelTokenOverride> = {};
+	const prefix: ModelTokenPrefixOverride[] = [];
 	for (const [modelId, value] of Object.entries(raw as Record<string, unknown>)) {
 		if (!modelId || typeof modelId !== 'string') {
 			continue;
@@ -69,12 +83,33 @@ export function getModelTokenOverrides(): Record<string, ModelTokenOverride> {
 		if (maxInputTokens === undefined && maxOutputTokens === undefined) {
 			continue;
 		}
-		overrides[modelId] = {
+
+		const override: ModelTokenOverride = {
 			maxInputTokens,
 			maxOutputTokens,
 		};
+
+		if (modelId.endsWith('*')) {
+			const keyPrefix = modelId.slice(0, -1).trim();
+			if (!keyPrefix) {
+				continue;
+			}
+			prefix.push({
+				prefix: keyPrefix,
+				override,
+			});
+			continue;
+		}
+
+		exact[modelId] = override;
 	}
-	return overrides;
+
+	prefix.sort((a, b) => b.prefix.length - a.prefix.length);
+
+	return {
+		exact,
+		prefix,
+	};
 }
 
 export function getForceOverrideModelTokenSettings(): boolean {

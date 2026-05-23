@@ -229,7 +229,7 @@ function applyModelTokenSettings(
 	model: ModelDefinition,
 	tokenSettings: ModelTokenSettings,
 ): ModelDefinition {
-	const override = tokenSettings.overrides[model.id];
+	const override = resolveConfiguredModelTokenOverride(model.id, tokenSettings);
 	if (override) {
 		return {
 			...model,
@@ -268,5 +268,23 @@ function getBuiltinModelTokenPreset(modelId: string): ModelTokenPreset | undefin
 			return entry.preset;
 		}
 	}
+	return undefined;
+}
+
+function resolveConfiguredModelTokenOverride(
+	modelId: string,
+	tokenSettings: ModelTokenSettings,
+) {
+	const exact = tokenSettings.overrides.exact[modelId];
+	if (exact) {
+		return exact;
+	}
+
+	for (const prefixOverride of tokenSettings.overrides.prefix) {
+		if (modelId.startsWith(prefixOverride.prefix)) {
+			return prefixOverride.override;
+		}
+	}
+
 	return undefined;
 }
