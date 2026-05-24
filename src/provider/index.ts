@@ -94,7 +94,10 @@ export class ResponsesChatProvider implements vscode.LanguageModelChatProvider {
 		try {
 			await this.modelRegistry.listModels(apiKey, true);
 		} catch (error) {
-			if (error instanceof ModelListRequestError && (error.status === 401 || error.status === 403)) {
+			if (
+				error instanceof ModelListRequestError &&
+				(error.status === 401 || error.status === 403)
+			) {
 				void vscode.window.showWarningMessage(t('models.refreshUnauthorized'));
 				logger.info('Model refresh unauthorized; keeping fallback models');
 			} else {

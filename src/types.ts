@@ -111,6 +111,7 @@ export interface ResponsesFunctionTool {
 export interface ResponsesRequest {
 	model: string;
 	input: ResponsesInputItem[];
+	instructions?: string;
 	stream: boolean;
 	previous_response_id?: string;
 	temperature?: number;

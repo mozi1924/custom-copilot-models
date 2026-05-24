@@ -50,12 +50,7 @@ export class ResponsesClient {
 		}
 
 		try {
-			await this.streamResponseWebSocket(
-				request,
-				callbacks,
-				cancellationToken,
-				sessionKey,
-			);
+			await this.streamResponseWebSocket(request, callbacks, cancellationToken, sessionKey);
 			return;
 		} catch (error) {
 			if (transportMode === 'websocketOnly' || cancellationToken?.isCancellationRequested) {
@@ -240,18 +235,14 @@ export class ResponsesClient {
 				}
 				try {
 					const event = JSON.parse(rawDataToString(data)) as ResponsesStreamEvent;
-						if (event.type === 'error') {
-							settleReject(new Error(formatWebSocketEventError(event)));
-							return;
-						}
+					if (event.type === 'error') {
+						settleReject(new Error(formatWebSocketEventError(event)));
+						return;
+					}
 
-						this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
-						if (event.type === 'response.completed') {
-							flushPendingToolCalls(
-								pendingToolCalls,
-								emittedToolCallItemIds,
-								callbacks,
-							);
+					this.handleEvent(event, pendingToolCalls, emittedToolCallItemIds, callbacks);
+					if (event.type === 'response.completed') {
+						flushPendingToolCalls(pendingToolCalls, emittedToolCallItemIds, callbacks);
 						completed = true;
 						callbacks.onDone();
 						settleResolve();
@@ -282,24 +273,22 @@ export class ResponsesClient {
 					return;
 				}
 				settleReject(
-					error instanceof Error
-						? error
-						: new Error(`Responses WebSocket error: ${String(error)}`),
+					error instanceof Error ? error : new Error(`Responses WebSocket error: ${String(error)}`),
 				);
 			};
 
-				ws.on('message', onMessage);
-				ws.on('close', onClose);
-				ws.on('error', onError);
+			ws.on('message', onMessage);
+			ws.on('close', onClose);
+			ws.on('error', onError);
 
-				cleanupListeners = () => {
-					ws.off('message', onMessage);
-					ws.off('close', onClose);
-					ws.off('error', onError);
-				};
+			cleanupListeners = () => {
+				ws.off('message', onMessage);
+				ws.off('close', onClose);
+				ws.off('error', onError);
+			};
 
-				ws.send(JSON.stringify(createPayload));
-			});
+			ws.send(JSON.stringify(createPayload));
+		});
 	}
 
 	private getOrCreateWebSocketSession(
@@ -414,12 +403,7 @@ export class ResponsesClient {
 				if (!isFunctionCallItem(item)) {
 					break;
 				}
-				this.emitToolCallFromItem(
-					item,
-					pendingToolCalls,
-					emittedToolCallItemIds,
-					callbacks,
-				);
+				this.emitToolCallFromItem(item, pendingToolCalls, emittedToolCallItemIds, callbacks);
 				break;
 			}
 			case 'response.output_item.done': {
@@ -428,12 +412,7 @@ export class ResponsesClient {
 					break;
 				}
 				// Some gateways emit function calls only in output_item.done.
-				this.emitToolCallFromItem(
-					item,
-					pendingToolCalls,
-					emittedToolCallItemIds,
-					callbacks,
-				);
+				this.emitToolCallFromItem(item, pendingToolCalls, emittedToolCallItemIds, callbacks);
 				break;
 			}
 			case 'response.completed': {
@@ -492,9 +471,9 @@ export class ResponsesClient {
 function isFunctionCallItem(item: unknown): item is ResponsesFunctionCallItem {
 	return Boolean(
 		item &&
-			typeof item === 'object' &&
-			(item as { type?: unknown }).type === 'function_call' &&
-			typeof (item as { id?: unknown }).id === 'string',
+		typeof item === 'object' &&
+		(item as { type?: unknown }).type === 'function_call' &&
+		typeof (item as { id?: unknown }).id === 'string',
 	);
 }
 

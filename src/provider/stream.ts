@@ -124,25 +124,25 @@ async function streamWithReasoningFallback(
 	token: vscode.CancellationToken,
 ): Promise<void> {
 	try {
-			await prepared.client.streamResponse(
-				prepared.request,
-				callbacks,
-				token,
-				prepared.streamingTransportMode,
-				prepared.segment.segmentId,
-			);
+		await prepared.client.streamResponse(
+			prepared.request,
+			callbacks,
+			token,
+			prepared.streamingTransportMode,
+			prepared.segment.segmentId,
+		);
 	} catch (error) {
 		if (!shouldRetryWithoutReasoning(prepared.request, error)) {
 			throw error;
 		}
 		prepared.request.reasoning = undefined;
-			await prepared.client.streamResponse(
-				prepared.request,
-				callbacks,
-				token,
-				prepared.streamingTransportMode,
-				prepared.segment.segmentId,
-			);
+		await prepared.client.streamResponse(
+			prepared.request,
+			callbacks,
+			token,
+			prepared.streamingTransportMode,
+			prepared.segment.segmentId,
+		);
 	}
 }
 
@@ -156,7 +156,9 @@ function shouldRetryWithoutReasoning(
 	const message = error.message.toLowerCase();
 	return (
 		message.includes('reasoning') &&
-		(message.includes('unsupported') || message.includes('invalid') || message.includes('not support'))
+		(message.includes('unsupported') ||
+			message.includes('invalid') ||
+			message.includes('not support'))
 	);
 }
 

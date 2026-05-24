@@ -128,4 +128,3 @@ export async function deactivate() {
 		logger.dispose();
 	}
 }
-

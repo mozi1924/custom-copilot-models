@@ -54,8 +54,7 @@ const zh: Translations = {
 		'当前请求要求模型必须调用工具（Required），但未附带任何可用工具。请先在 Configure Tools 中启用至少一个工具。',
 	'request.preflightRoundLimitExceeded':
 		'实验性稳定工具列表设置已尝试 {0} 轮，仍无法得到稳定的已启用工具列表。请关闭该实验性设置，或先用 VS Code 的 Configure Tools 关闭不常用的工具。',
-	'notice.toolDrift':
-		'⚠️ 工具列表不稳定，缓存命中率可能下降。',
+	'notice.toolDrift': '⚠️ 工具列表不稳定，缓存命中率可能下降。',
 
 	// Extension
 	'extension.activateFailed': 'Responses Copilot 激活失败，请运行 "Responses: 显示日志" 查看详情。',
@@ -72,8 +71,7 @@ const en: Translations = {
 
 	// API Key
 	'auth.apiKeyRequiredDetail': 'Please run Responses: Set API Key to configure.',
-	'auth.prompt':
-		'Enter your OpenAI API key or compatible Responses provider token.',
+	'auth.prompt': 'Enter your OpenAI API key or compatible Responses provider token.',
 	'auth.placeholder': 'sk-... or provider token',
 	'auth.emptyValidation': 'API key cannot be empty',
 	'auth.saved': 'API key saved.',
@@ -105,11 +103,11 @@ const en: Translations = {
 		'This request requires tool use (Required), but no tools were provided. Enable at least one tool in Configure Tools.',
 	'request.preflightRoundLimitExceeded':
 		'Experimental tool-list stabilization tried {0} rounds but still could not get a stable enabled-tools list. Turn this experimental setting off, or use VS Code Configure Tools to disable tools you rarely use first.',
-	'notice.toolDrift':
-		'⚠️ Tool list is unstable; cache hit rate may drop.',
+	'notice.toolDrift': '⚠️ Tool list is unstable; cache hit rate may drop.',
 
 	// Extension
-	'extension.activateFailed': 'Responses Copilot failed to activate. Run "Responses: Show Logs" for details.',
+	'extension.activateFailed':
+		'Responses Copilot failed to activate. Run "Responses: Show Logs" for details.',
 	'extension.deactivateFailed': 'Failed to prepare provider for deactivate',
 	'extension.welcomeFailed': 'Failed to show welcome prompt',
 	'extension.openRequestDumpsFolderFailed':

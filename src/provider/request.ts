@@ -5,7 +5,7 @@ import { getBaseUrl, getMaxOutputTokens, getStreamingTransportMode } from '../co
 import { FALLBACK_MODELS } from '../consts';
 import { t } from '../i18n';
 import type { DeepSeekRequest, ResponsesRequest } from '../types';
-import { convertMessages, countMessageChars } from './convert';
+import { convertMessages, countMessageChars, extractSystemInstructions } from './convert';
 import {
 	classifyDeepSeekRequest,
 	dumpDeepSeekRequest,
@@ -67,7 +67,10 @@ export async function prepareChatRequest({
 		modelOptionOverrides.maxOutputTokens ?? configuredMaxOutputTokens;
 	const previousResponseId = resolvePreviousResponseId(messages, segment);
 	const requestMessages = resolveRequestMessages(messages, segment, previousResponseId);
-	const converted = convertMessages(requestMessages, isThinkingModel);
+	const instructions = extractSystemInstructions(messages);
+	const converted = convertMessages(requestMessages, isThinkingModel, {
+		omitSystemMessages: true,
+	});
 	const { tools, toolChoice } = prepareRequestTools(
 		modelDef?.capabilities.toolCalling ?? true,
 		options,
@@ -76,6 +79,7 @@ export async function prepareChatRequest({
 	const request: ResponsesRequest = {
 		model: modelInfo.id,
 		input: converted.input,
+		instructions,
 		stream: true,
 		previous_response_id: previousResponseId,
 		tools,
@@ -86,10 +90,13 @@ export async function prepareChatRequest({
 		...(isThinkingModel ? { reasoning: { effort: thinkingEffort } } : {}),
 	};
 
-	const totalRequestChars = countMessageChars(converted.debugMessages);
+	const debugMessages = instructions
+		? [{ role: 'system' as const, content: instructions }, ...converted.debugMessages]
+		: converted.debugMessages;
+	const totalRequestChars = countMessageChars(debugMessages);
 	const debugRequest: DeepSeekRequest = {
 		model: request.model,
-		messages: converted.debugMessages,
+		messages: debugMessages,
 		stream: true,
 		previous_response_id: request.previous_response_id,
 		tools: tools?.map((tool) => ({
@@ -112,29 +119,29 @@ export async function prepareChatRequest({
 		inputMessages: requestMessages,
 	});
 
-	dumpDeepSeekRequest(debugRequest, {
+	dumpDeepSeekRequest(request, debugRequest, {
 		globalStorageUri,
 		segment,
 		requestKind,
-			vscodeModelId: modelInfo.id,
-			isThinkingModel,
-			thinkingEffort,
-			maxTokens: effectiveMaxOutputTokens,
-			inputMessages: messages,
-			resolvedMessages: requestMessages,
-			requestOptions: options,
+		vscodeModelId: modelInfo.id,
+		isThinkingModel,
+		thinkingEffort,
+		maxTokens: effectiveMaxOutputTokens,
+		inputMessages: messages,
+		resolvedMessages: requestMessages,
+		requestOptions: options,
 	});
 
 	const diagnosticsRun = cacheDiagnostics.beginRequest({
 		request: debugRequest,
 		segment,
 		requestKind,
-			vscodeModelId: modelInfo.id,
-			isThinkingModel,
-			thinkingEffort,
-			maxTokens: effectiveMaxOutputTokens,
-			inputMessages: messages,
-			resolvedMessages: requestMessages,
+		vscodeModelId: modelInfo.id,
+		isThinkingModel,
+		thinkingEffort,
+		maxTokens: effectiveMaxOutputTokens,
+		inputMessages: messages,
+		resolvedMessages: requestMessages,
 	});
 
 	return {

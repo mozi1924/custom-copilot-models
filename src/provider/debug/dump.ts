@@ -7,7 +7,7 @@ import { getRequestDumpEnabled } from '../../config';
 import { LANGUAGE_MODEL_CHAT_SYSTEM_ROLE } from '../../consts';
 import { safeStringify, toWellFormedString } from '../../json';
 import { logger } from '../../logger';
-import type { DeepSeekMessage, DeepSeekRequest } from '../../types';
+import type { DeepSeekMessage, DeepSeekRequest, ResponsesRequest } from '../../types';
 import { parseReplayMarkerData, REPLAY_MARKER_MIME } from '../replay';
 import type { ConversationSegment } from '../segment';
 import { ACTIVATE_TOOL_PREFIX } from '../tools/consts';
@@ -176,7 +176,8 @@ export function dumpProviderInput(options: DumpProviderInputOptions): void {
  *   responses-request-<timestamp>-NNNN.msg0.txt       — messages[0] content (system prompt)
  */
 export function dumpDeepSeekRequest(
-	request: DeepSeekRequest,
+	request: ResponsesRequest,
+	debugRequest: DeepSeekRequest,
 	options: DumpDeepSeekRequestOptions,
 ): void {
 	if (!getRequestDumpEnabled()) return;
@@ -184,7 +185,7 @@ export function dumpDeepSeekRequest(
 	const requestKind =
 		options.requestKind ??
 		classifyDeepSeekRequest({
-			request,
+			request: debugRequest,
 			inputMessages: options.inputMessages,
 		});
 	const context = createDumpContext(
@@ -194,7 +195,7 @@ export function dumpDeepSeekRequest(
 		(dumpCounter += 1),
 		requestKind,
 	);
-	const msg0 = request.messages[0];
+	const msg0 = debugRequest.messages[0];
 	const paths = createRequestDumpPaths(context, Boolean(msg0));
 	const toolSummary = summarizeTools(options.requestOptions.tools);
 
@@ -202,11 +203,25 @@ export function dumpDeepSeekRequest(
 		await mkdir(context.root, { recursive: true });
 		await writeJsonFile(
 			paths.input,
-			createPipelineSnapshot('input', request, options.inputMessages, options, context),
+			createPipelineSnapshot(
+				'input',
+				request,
+				debugRequest,
+				options.inputMessages,
+				options,
+				context,
+			),
 		);
 		await writeJsonFile(
 			paths.resolved,
-			createPipelineSnapshot('resolved', request, options.resolvedMessages, options, context),
+			createPipelineSnapshot(
+				'resolved',
+				request,
+				debugRequest,
+				options.resolvedMessages,
+				options,
+				context,
+			),
 		);
 
 		const requestJson = await writeJsonFile(paths.request, request, (value) =>
@@ -234,7 +249,7 @@ export function dumpDeepSeekRequest(
 				toolSummary,
 			}),
 		);
-		logRequestDump(request, options, paths, requestJson.length, requestKind);
+		logRequestDump(request, debugRequest, options, paths, requestJson.length, requestKind);
 	});
 }
 
@@ -329,7 +344,8 @@ function createProviderInputSnapshot(
 
 function createPipelineSnapshot(
 	stage: 'input' | 'resolved',
-	request: DeepSeekRequest,
+	request: ResponsesRequest,
+	debugRequest: DeepSeekRequest,
 	messages: readonly vscode.LanguageModelChatRequestMessage[],
 	options: DumpDeepSeekRequestOptions,
 	context: DumpContext,
@@ -339,17 +355,18 @@ function createPipelineSnapshot(
 		context,
 		segment: options.segment,
 		requestKind: context.requestKind,
-			model: {
-				vscodeModelId: options.vscodeModelId,
-				apiModelId: request.model === options.vscodeModelId ? undefined : request.model,
-				isThinkingModel: options.isThinkingModel,
-				thinkingEffort: options.thinkingEffort,
-				maxTokens: options.maxTokens ?? null,
-			},
-			deepSeekPromptSummary: summarizeDeepSeekSystemPrompt(request.messages),
-			messages,
-			requestOptions: options.requestOptions,
-		});
+		model: {
+			vscodeModelId: options.vscodeModelId,
+			apiModelId: request.model === options.vscodeModelId ? undefined : request.model,
+			isThinkingModel: options.isThinkingModel,
+			thinkingEffort: options.thinkingEffort,
+			maxTokens: options.maxTokens ?? null,
+			instructionsChars: request.instructions?.length ?? 0,
+		},
+		deepSeekPromptSummary: summarizeDeepSeekSystemPrompt(debugRequest.messages),
+		messages,
+		requestOptions: options.requestOptions,
+	});
 }
 
 function createDumpSnapshot(options: {
@@ -986,13 +1003,14 @@ function logProviderInputDump(
 }
 
 function logRequestDump(
-	request: DeepSeekRequest,
+	request: ResponsesRequest,
+	debugRequest: DeepSeekRequest,
 	options: DumpDeepSeekRequestOptions,
 	paths: RequestDumpPaths,
 	requestJsonLength: number,
 	requestKind: RequestKind,
 ): void {
-	const systemPromptSummary = summarizeDeepSeekSystemPrompt(request.messages);
+	const systemPromptSummary = summarizeDeepSeekSystemPrompt(debugRequest.messages);
 	logger.debug(
 		formatRequestLogLine(
 			requestKind,
@@ -1000,7 +1018,7 @@ function logRequestDump(
 				` ${formatModelFields(options.vscodeModelId, request.model)}` +
 				` request=${formatFileUri(paths.request)} ` +
 				`input=${formatFileUri(paths.input)} resolved=${formatFileUri(paths.resolved)} ` +
-				`(${request.messages.length} msgs, ${request.tools?.length ?? 0} tools, ` +
+				`(${debugRequest.messages.length} msgs, ${request.tools?.length ?? 0} tools, ` +
 				`~${(requestJsonLength / 1024).toFixed(0)} KB) ` +
 				formatHostSettingsSummary(summarizeHostSettings()) +
 				` ${formatSystemPromptSummary(systemPromptSummary)}`,

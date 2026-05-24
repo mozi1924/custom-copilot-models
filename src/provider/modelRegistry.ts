@@ -101,7 +101,10 @@ export class ModelRegistry {
 				return fetched;
 			}
 		} catch (error) {
-			if (error instanceof ModelListRequestError && (error.status === 401 || error.status === 403)) {
+			if (
+				error instanceof ModelListRequestError &&
+				(error.status === 401 || error.status === 403)
+			) {
 				logger.info('Remote model list unauthorized; falling back to static models');
 			} else {
 				logger.warn('Failed to fetch remote model list; falling back to static models', error);
@@ -159,21 +162,24 @@ export function toModelDefinition(
 	tokenSettings = getCurrentModelTokenSettings(),
 ): ModelDefinition {
 	const family = resolveFamily(id);
-	return applyModelTokenSettings({
-		id,
-		name: id,
-		family,
-		version: resolveVersion(id),
-		detail: 'Responses API model',
-		maxInputTokens: tokenSettings.defaultMaxInputTokens,
-		maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
-		capabilities: {
-			toolCalling: true,
-			imageInput: true,
-			thinking: true,
+	return applyModelTokenSettings(
+		{
+			id,
+			name: id,
+			family,
+			version: resolveVersion(id),
+			detail: 'Responses API model',
+			maxInputTokens: tokenSettings.defaultMaxInputTokens,
+			maxOutputTokens: tokenSettings.defaultMaxOutputTokens,
+			capabilities: {
+				toolCalling: true,
+				imageInput: true,
+				thinking: true,
+			},
+			requiresThinkingParam: false,
 		},
-		requiresThinkingParam: false,
-	}, tokenSettings);
+		tokenSettings,
+	);
 }
 
 export function isLikelyChatModelId(modelId: string): boolean {
@@ -271,10 +277,7 @@ function getBuiltinModelTokenPreset(modelId: string): ModelTokenPreset | undefin
 	return undefined;
 }
 
-function resolveConfiguredModelTokenOverride(
-	modelId: string,
-	tokenSettings: ModelTokenSettings,
-) {
+function resolveConfiguredModelTokenOverride(modelId: string, tokenSettings: ModelTokenSettings) {
 	const exact = tokenSettings.overrides.exact[modelId];
 	if (exact) {
 		return exact;

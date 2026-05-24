@@ -1,8 +1,5 @@
 import vscode from 'vscode';
-import {
-	getOmitMaxOutputTokensInModelMetadata,
-	getReasoningEffortDefault,
-} from '../config';
+import { getOmitMaxOutputTokensInModelMetadata, getReasoningEffortDefault } from '../config';
 import { t } from '../i18n';
 import type { ModelDefinition } from '../types';
 

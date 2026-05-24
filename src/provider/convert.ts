@@ -16,6 +16,10 @@ interface ConvertedMessages {
 	debugMessages: DeepSeekMessage[];
 }
 
+interface ConvertMessagesOptions {
+	omitSystemMessages?: boolean;
+}
+
 /**
  * Convert VS Code chat messages to Responses `input` messages.
  * Also returns a text-only debug message list used by existing diagnostics.
@@ -23,12 +27,14 @@ interface ConvertedMessages {
 export function convertMessages(
 	messages: readonly vscode.LanguageModelChatRequestMessage[],
 	isThinkingModel: boolean,
+	options: ConvertMessagesOptions = {},
 ): ConvertedMessages {
 	const input: ResponsesInputItem[] = [];
 	const debugMessages: DeepSeekMessage[] = [];
 
 	for (const message of messages) {
 		const role = mapRole(message.role);
+		const skipSystemMessage = options.omitSystemMessages && role === 'system';
 		const parts: Array<ResponsesInputTextPart | ResponsesOutputTextPart | ResponsesInputImagePart> =
 			[];
 		let debugText = '';
@@ -46,11 +52,16 @@ export function convertMessages(
 		for (const part of message.content) {
 			if (part instanceof vscode.LanguageModelTextPart) {
 				if (part.value.length > 0) {
-					parts.push(createTextPartForRole(role, part.value));
+					if (!skipSystemMessage) {
+						parts.push(createTextPartForRole(role, part.value));
+					}
 				}
 				debugText += part.value;
-			} else if (part instanceof vscode.LanguageModelDataPart && part.mimeType.startsWith('image/')) {
-				if (role !== 'assistant') {
+			} else if (
+				part instanceof vscode.LanguageModelDataPart &&
+				part.mimeType.startsWith('image/')
+			) {
+				if (role !== 'assistant' && !skipSystemMessage) {
 					parts.push({
 						type: 'input_image',
 						image_url: toDataUrl(part.mimeType, part.data),
@@ -60,6 +71,9 @@ export function convertMessages(
 			} else if (isLanguageModelThinkingPart(part)) {
 				thinkingContent += normalizeThinkingPartText(part.value);
 			} else if (part instanceof vscode.LanguageModelToolCallPart) {
+				if (skipSystemMessage) {
+					continue;
+				}
 				const argumentsJson = safeStringify(part.input);
 				toolCalls.push({
 					id: part.callId,
@@ -76,6 +90,9 @@ export function convertMessages(
 					arguments: argumentsJson,
 				});
 			} else if (part instanceof vscode.LanguageModelToolResultPart) {
+				if (skipSystemMessage) {
+					continue;
+				}
 				let toolContent = '';
 				for (const item of part.content) {
 					if (item instanceof vscode.LanguageModelTextPart) {
@@ -146,6 +163,39 @@ export function convertMessages(
 	return { input, debugMessages };
 }
 
+export function extractSystemInstructions(
+	messages: readonly vscode.LanguageModelChatRequestMessage[],
+): string | undefined {
+	const parts: string[] = [];
+
+	for (const message of messages) {
+		if (mapRole(message.role) !== 'system') {
+			continue;
+		}
+
+		const text = getMessageText(message);
+		if (text.length > 0) {
+			parts.push(text);
+		}
+	}
+
+	if (parts.length === 0) {
+		return undefined;
+	}
+
+	return parts.join('\n\n');
+}
+
+function getMessageText(message: vscode.LanguageModelChatRequestMessage): string {
+	let text = '';
+	for (const part of message.content) {
+		if (part instanceof vscode.LanguageModelTextPart) {
+			text += part.value;
+		}
+	}
+	return text;
+}
+
 function getReasoningContent(
 	replayMarker: ReturnType<typeof parseFirstReplayMarker>,
 	thinkingContent: string,
@@ -167,9 +217,7 @@ function normalizeThinkingPartText(value: string | string[]): string {
 	return Array.isArray(value) ? value.join('') : value;
 }
 
-function mapRole(
-	role: vscode.LanguageModelChatMessageRole,
-): 'user' | 'assistant' | 'system' {
+function mapRole(role: vscode.LanguageModelChatMessageRole): 'user' | 'assistant' | 'system' {
 	switch (role) {
 		case vscode.LanguageModelChatMessageRole.User:
 			return 'user';
@@ -231,7 +279,9 @@ function normalizeToolSchema(
 	const root = { ...(normalized as Record<string, unknown>) };
 	const hasObjectShape =
 		root.type === 'object' ||
-		(typeof root.properties === 'object' && root.properties !== null && !Array.isArray(root.properties));
+		(typeof root.properties === 'object' &&
+			root.properties !== null &&
+			!Array.isArray(root.properties));
 	if (!hasObjectShape) {
 		return createEmptyObjectSchema();
 	}

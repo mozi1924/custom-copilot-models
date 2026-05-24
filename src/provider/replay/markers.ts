@@ -129,10 +129,7 @@ export function parseReplayMarkerData(data: Uint8Array): ReplayMarkerParseResult
 			...reasoning,
 			...response,
 			legacySegmentOnly: Boolean(
-				segmentId.value &&
-					!vision.visionText &&
-					!reasoning.reasoningText &&
-					!response.responseId,
+				segmentId.value && !vision.visionText && !reasoning.reasoningText && !response.responseId,
 			),
 			payloadFormat: decodedPayload.format,
 		};

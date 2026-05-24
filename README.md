@@ -6,6 +6,7 @@
 
 - Uses `POST /v1/responses` only (no `chat/completions` fallback).
 - Streams text and tool calls from Responses events.
+- Maps VS Code system messages to the Responses `instructions` field.
 - Sends image attachments as native `input_image` parts (no local vision proxy model).
 - Pulls model list from upstream `GET /v1/models` with TTL cache + manual refresh.
 - Keeps Copilot native experience: agent flow, tools, instructions, MCP, and skills.
